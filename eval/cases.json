@@ -1,0 +1,17 @@
+{
+  "description": "12-query development benchmark from the paper (Sec. VIII-B). Restricted to the bottle-process source; expected = CSV record numbers in bottles_processes.csv. Selected during development: a regression test, not a generalization claim.",
+  "cases": [
+    {"query": "bottle-grade PET", "filters": {"source": "bottles_processes"}, "expected": [232]},
+    {"query": "aluminium sheet", "filters": {"source": "bottles_processes"}, "expected": [16]},
+    {"query": "copper wire", "filters": {"source": "bottles_processes"}, "expected": [37, 228]},
+    {"query": "HDPE", "filters": {"source": "bottles_processes"}, "expected": [11]},
+    {"query": "LDPE", "filters": {"source": "bottles_processes"}, "expected": [122]},
+    {"query": "glass container", "filters": {"source": "bottles_processes"}, "expected": [407]},
+    {"query": "steel rebar", "filters": {"source": "bottles_processes"}, "expected": [72]},
+    {"query": "natural gas process steam", "filters": {"source": "bottles_processes", "location": "EU-27"}, "expected": [446, 283]},
+    {"query": "glass landfill", "filters": {"source": "bottles_processes"}, "expected": [181]},
+    {"query": "glass wool", "filters": {"source": "bottles_processes"}, "expected": [246]},
+    {"query": "copper tube", "filters": {"source": "bottles_processes"}, "expected": [143, 308]},
+    {"query": "amorphous PET", "filters": {"source": "bottles_processes"}, "expected": [5]}
+  ]
+}

@@ -1,0 +1,11 @@
+item_id,component,material,quantity,unit,supplier_country
+B-001,Bottle body,bottle-grade PET,0.025,kg,DE
+B-002,Screw cap,HDPE,0.002,kg,DE
+B-003,Cap liner,LDPE,0.0005,kg,DE
+B-004,Shipping carton,corrugated board boxes,0.04,kg,PL
+B-005,Pallet strap,steel sheet,0.003,kg,PL
+B-006,Bottle filling,natural gas process steam,0.15,MJ,DE
+B-007,Display stand,recycled carbon fibre composite,0.01,kg,CN
+B-008,Label adhesive,acrylic hot-melt adhesive,0.0002,kg,DE
+B-009,Insert,aluminium sheet,0.003,g,IT
+B-010,Spare cap,HDPE,,kg,DE

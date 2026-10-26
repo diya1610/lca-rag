@@ -1,0 +1,7 @@
+index/lca_rag.sqlite
+index/dense/
+index/*.log
+__pycache__/
+*.tmp-*
+upstream/
+.DS_Store

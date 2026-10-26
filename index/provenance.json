@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/saniyalakdawala/lca_backend",
+  "commit": "975ca407202304e57d1d4c5a94b821c2338bf21a",
+  "extraction": "CSV exports produced upstream by an openLCA extraction script over free LCA datasets",
+  "files": {
+    "bottles_processes.csv": {
+      "sha256": "1542145eeffb97161b79a1568bb3f61ac8b52bb6eab6c8ea17a98c0d6df0bb5e",
+      "bytes": 535702
+    },
+    "lca_full_rag_data_units.csv": {
+      "sha256": "cd0ac7a621f7e710c54aab7d9ce34d1f74d1098bfd9c26ede70bf8c5e893a9af",
+      "bytes": 299870
+    },
+    "openlca_flows.csv": {
+      "sha256": "800903de1aa99ceda3fc80f2086c6fc3302c5237e638eec91e705c6099a05495",
+      "bytes": 25637397
+    },
+    "usda_flows.csv": {
+      "sha256": "8c5ac220595623fdc7dc2934e078b79e36f23beb675a791d318bf7a4510d821b",
+      "bytes": 19703007
+    }
+  },
+  "ingested_at": "2026-10-26T06:46:53+00:00",
+  "record_id_format": "source:record-number (1-based CSV data record)"
+}

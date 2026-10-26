@@ -1,0 +1,358 @@
+[
+  {
+    "mode": "bm25",
+    "n": 12,
+    "hit@1": 1.0,
+    "hit@5": 1.0,
+    "mrr@5": 1.0,
+    "mean_latency_ms": 102.9,
+    "cases": [
+      {
+        "query": "bottle-grade PET",
+        "rank": 1,
+        "top1": "bottles_processes:232"
+      },
+      {
+        "query": "aluminium sheet",
+        "rank": 1,
+        "top1": "bottles_processes:16"
+      },
+      {
+        "query": "copper wire",
+        "rank": 1,
+        "top1": "bottles_processes:37"
+      },
+      {
+        "query": "HDPE",
+        "rank": 1,
+        "top1": "bottles_processes:11"
+      },
+      {
+        "query": "LDPE",
+        "rank": 1,
+        "top1": "bottles_processes:122"
+      },
+      {
+        "query": "glass container",
+        "rank": 1,
+        "top1": "bottles_processes:407"
+      },
+      {
+        "query": "steel rebar",
+        "rank": 1,
+        "top1": "bottles_processes:72"
+      },
+      {
+        "query": "natural gas process steam",
+        "rank": 1,
+        "top1": "bottles_processes:446"
+      },
+      {
+        "query": "glass landfill",
+        "rank": 1,
+        "top1": "bottles_processes:181"
+      },
+      {
+        "query": "glass wool",
+        "rank": 1,
+        "top1": "bottles_processes:246"
+      },
+      {
+        "query": "copper tube",
+        "rank": 1,
+        "top1": "bottles_processes:308"
+      },
+      {
+        "query": "amorphous PET",
+        "rank": 1,
+        "top1": "bottles_processes:5"
+      }
+    ]
+  },
+  {
+    "mode": "dense-upstream",
+    "n": 12,
+    "hit@1": 0.8333333333333334,
+    "hit@5": 1.0,
+    "mrr@5": 0.8777777777777778,
+    "mean_latency_ms": 144.4,
+    "cases": [
+      {
+        "query": "bottle-grade PET",
+        "rank": 5,
+        "top1": "bottles_processes:508",
+        "top1_cosine": 0.6290544867515564,
+        "relevant_cosine": 0.37400659918785095,
+        "margin": -0.25504788756370544
+      },
+      {
+        "query": "aluminium sheet",
+        "rank": 1,
+        "top1": "bottles_processes:16",
+        "top1_cosine": 0.6607428789138794,
+        "relevant_cosine": 0.6607428789138794,
+        "margin": 0.19050318002700806
+      },
+      {
+        "query": "copper wire",
+        "rank": 1,
+        "top1": "bottles_processes:37",
+        "top1_cosine": 0.6098175644874573,
+        "relevant_cosine": 0.6098175644874573,
+        "margin": 0.13220956921577454
+      },
+      {
+        "query": "HDPE",
+        "rank": 1,
+        "top1": "bottles_processes:11",
+        "top1_cosine": 0.2482447624206543,
+        "relevant_cosine": 0.2482447624206543,
+        "margin": 0.05878916382789612
+      },
+      {
+        "query": "LDPE",
+        "rank": 1,
+        "top1": "bottles_processes:122",
+        "top1_cosine": 0.31677475571632385,
+        "relevant_cosine": 0.31677475571632385,
+        "margin": 0.034383296966552734
+      },
+      {
+        "query": "glass container",
+        "rank": 1,
+        "top1": "bottles_processes:407",
+        "top1_cosine": 0.627445638179779,
+        "relevant_cosine": 0.627445638179779,
+        "margin": 0.15833169221878052
+      },
+      {
+        "query": "steel rebar",
+        "rank": 1,
+        "top1": "bottles_processes:72",
+        "top1_cosine": 0.5875989198684692,
+        "relevant_cosine": 0.5875989198684692,
+        "margin": 0.259269118309021
+      },
+      {
+        "query": "natural gas process steam",
+        "rank": 1,
+        "top1": "bottles_processes:283",
+        "top1_cosine": 0.8049818277359009,
+        "relevant_cosine": 0.8049818277359009,
+        "margin": 0.12108439207077026
+      },
+      {
+        "query": "glass landfill",
+        "rank": 1,
+        "top1": "bottles_processes:181",
+        "top1_cosine": 0.7870529294013977,
+        "relevant_cosine": 0.7870529294013977,
+        "margin": 0.22433209419250488
+      },
+      {
+        "query": "glass wool",
+        "rank": 1,
+        "top1": "bottles_processes:246",
+        "top1_cosine": 0.6655783653259277,
+        "relevant_cosine": 0.6655783653259277,
+        "margin": 0.1686117947101593
+      },
+      {
+        "query": "copper tube",
+        "rank": 1,
+        "top1": "bottles_processes:308",
+        "top1_cosine": 0.6356996893882751,
+        "relevant_cosine": 0.6356996893882751,
+        "margin": 0.16364067792892456
+      },
+      {
+        "query": "amorphous PET",
+        "rank": 3,
+        "top1": "bottles_processes:506",
+        "top1_cosine": 0.42229974269866943,
+        "relevant_cosine": 0.40748822689056396,
+        "margin": -0.014811515808105469
+      }
+    ],
+    "mean_relevant_cosine": 0.5605,
+    "mean_margin": 0.1034
+  },
+  {
+    "mode": "dense-improved",
+    "n": 12,
+    "hit@1": 1.0,
+    "hit@5": 1.0,
+    "mrr@5": 1.0,
+    "mean_latency_ms": 150.8,
+    "cases": [
+      {
+        "query": "bottle-grade PET",
+        "rank": 1,
+        "top1": "bottles_processes:232",
+        "top1_cosine": 0.8505746126174927,
+        "relevant_cosine": 0.8505746126174927,
+        "margin": 0.05192065238952637
+      },
+      {
+        "query": "aluminium sheet",
+        "rank": 1,
+        "top1": "bottles_processes:16",
+        "top1_cosine": 0.764877438545227,
+        "relevant_cosine": 0.764877438545227,
+        "margin": 0.09812402725219727
+      },
+      {
+        "query": "copper wire",
+        "rank": 1,
+        "top1": "bottles_processes:37",
+        "top1_cosine": 0.8127016425132751,
+        "relevant_cosine": 0.8127016425132751,
+        "margin": 0.11465245485305786
+      },
+      {
+        "query": "HDPE",
+        "rank": 1,
+        "top1": "bottles_processes:11",
+        "top1_cosine": 0.845643937587738,
+        "relevant_cosine": 0.845643937587738,
+        "margin": 0.07910197973251343
+      },
+      {
+        "query": "LDPE",
+        "rank": 1,
+        "top1": "bottles_processes:122",
+        "top1_cosine": 0.8386502265930176,
+        "relevant_cosine": 0.8386502265930176,
+        "margin": 0.06438827514648438
+      },
+      {
+        "query": "glass container",
+        "rank": 1,
+        "top1": "bottles_processes:407",
+        "top1_cosine": 0.7619777917861938,
+        "relevant_cosine": 0.7619777917861938,
+        "margin": 0.09942352771759033
+      },
+      {
+        "query": "steel rebar",
+        "rank": 1,
+        "top1": "bottles_processes:72",
+        "top1_cosine": 0.7922069430351257,
+        "relevant_cosine": 0.7922069430351257,
+        "margin": 0.1539115309715271
+      },
+      {
+        "query": "natural gas process steam",
+        "rank": 1,
+        "top1": "bottles_processes:446",
+        "top1_cosine": 0.8521166443824768,
+        "relevant_cosine": 0.8521166443824768,
+        "margin": 0.11698395013809204
+      },
+      {
+        "query": "glass landfill",
+        "rank": 1,
+        "top1": "bottles_processes:181",
+        "top1_cosine": 0.8088958859443665,
+        "relevant_cosine": 0.8088958859443665,
+        "margin": 0.08975398540496826
+      },
+      {
+        "query": "glass wool",
+        "rank": 1,
+        "top1": "bottles_processes:246",
+        "top1_cosine": 0.7875319123268127,
+        "relevant_cosine": 0.7875319123268127,
+        "margin": 0.09135705232620239
+      },
+      {
+        "query": "copper tube",
+        "rank": 1,
+        "top1": "bottles_processes:308",
+        "top1_cosine": 0.773064911365509,
+        "relevant_cosine": 0.773064911365509,
+        "margin": 0.05209904909133911
+      },
+      {
+        "query": "amorphous PET",
+        "rank": 1,
+        "top1": "bottles_processes:5",
+        "top1_cosine": 0.8465952277183533,
+        "relevant_cosine": 0.8465952277183533,
+        "margin": 0.04791492223739624
+      }
+    ],
+    "mean_relevant_cosine": 0.8112,
+    "mean_margin": 0.0883
+  },
+  {
+    "mode": "hybrid",
+    "n": 12,
+    "hit@1": 1.0,
+    "hit@5": 1.0,
+    "mrr@5": 1.0,
+    "mean_latency_ms": 83.8,
+    "cases": [
+      {
+        "query": "bottle-grade PET",
+        "rank": 1,
+        "top1": "bottles_processes:232"
+      },
+      {
+        "query": "aluminium sheet",
+        "rank": 1,
+        "top1": "bottles_processes:16"
+      },
+      {
+        "query": "copper wire",
+        "rank": 1,
+        "top1": "bottles_processes:37"
+      },
+      {
+        "query": "HDPE",
+        "rank": 1,
+        "top1": "bottles_processes:11"
+      },
+      {
+        "query": "LDPE",
+        "rank": 1,
+        "top1": "bottles_processes:122"
+      },
+      {
+        "query": "glass container",
+        "rank": 1,
+        "top1": "bottles_processes:407"
+      },
+      {
+        "query": "steel rebar",
+        "rank": 1,
+        "top1": "bottles_processes:72"
+      },
+      {
+        "query": "natural gas process steam",
+        "rank": 1,
+        "top1": "bottles_processes:446"
+      },
+      {
+        "query": "glass landfill",
+        "rank": 1,
+        "top1": "bottles_processes:181"
+      },
+      {
+        "query": "glass wool",
+        "rank": 1,
+        "top1": "bottles_processes:246"
+      },
+      {
+        "query": "copper tube",
+        "rank": 1,
+        "top1": "bottles_processes:308"
+      },
+      {
+        "query": "amorphous PET",
+        "rank": 1,
+        "top1": "bottles_processes:5"
+      }
+    ]
+  }
+]

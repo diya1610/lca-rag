@@ -1,0 +1,17 @@
+{
+  "description": "12 paraphrased queries for the same targets, written without the records' own wording, to compare lexical vs cosine (dense) retrieval. Authored during development; indicative only.",
+  "cases": [
+    {"query": "plastic drink bottle resin", "filters": {"source": "bottles_processes"}, "expected": [232]},
+    {"query": "aluminum rolled plate", "filters": {"source": "bottles_processes"}, "expected": [16]},
+    {"query": "electrical cable copper conductor", "filters": {"source": "bottles_processes"}, "expected": [37, 228]},
+    {"query": "PE-HD pellets", "filters": {"source": "bottles_processes"}, "expected": [11]},
+    {"query": "polyethylene for film, low density", "filters": {"source": "bottles_processes"}, "expected": [122]},
+    {"query": "glass jars and bottles for packaging", "filters": {"source": "bottles_processes"}, "expected": [407]},
+    {"query": "reinforcing bars for concrete", "filters": {"source": "bottles_processes"}, "expected": [72]},
+    {"query": "heat supplied by burning methane", "filters": {"source": "bottles_processes", "location": "EU-27"}, "expected": [446, 283]},
+    {"query": "dumping waste glass in a landfill", "filters": {"source": "bottles_processes"}, "expected": [181]},
+    {"query": "fiberglass insulation batts", "filters": {"source": "bottles_processes"}, "expected": [246]},
+    {"query": "copper plumbing pipe", "filters": {"source": "bottles_processes"}, "expected": [143, 308]},
+    {"query": "non-crystalline polyester granules", "filters": {"source": "bottles_processes"}, "expected": [5]}
+  ]
+}

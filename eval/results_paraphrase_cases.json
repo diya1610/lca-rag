@@ -1,0 +1,358 @@
+[
+  {
+    "mode": "bm25",
+    "n": 12,
+    "hit@1": 0.4166666666666667,
+    "hit@5": 0.5833333333333334,
+    "mrr@5": 0.4611111111111111,
+    "mean_latency_ms": 56.5,
+    "cases": [
+      {
+        "query": "plastic drink bottle resin",
+        "rank": null,
+        "top1": "bottles_processes:502"
+      },
+      {
+        "query": "aluminum rolled plate",
+        "rank": 5,
+        "top1": "bottles_processes:482"
+      },
+      {
+        "query": "electrical cable copper conductor",
+        "rank": 1,
+        "top1": "bottles_processes:37"
+      },
+      {
+        "query": "PE-HD pellets",
+        "rank": 1,
+        "top1": "bottles_processes:11"
+      },
+      {
+        "query": "polyethylene for film, low density",
+        "rank": 1,
+        "top1": "bottles_processes:122"
+      },
+      {
+        "query": "glass jars and bottles for packaging",
+        "rank": null,
+        "top1": "bottles_processes:187"
+      },
+      {
+        "query": "reinforcing bars for concrete",
+        "rank": null,
+        "top1": "bottles_processes:239"
+      },
+      {
+        "query": "heat supplied by burning methane",
+        "rank": 1,
+        "top1": "bottles_processes:446"
+      },
+      {
+        "query": "dumping waste glass in a landfill",
+        "rank": 1,
+        "top1": "bottles_processes:181"
+      },
+      {
+        "query": "fiberglass insulation batts",
+        "rank": null,
+        "top1": null
+      },
+      {
+        "query": "copper plumbing pipe",
+        "rank": 3,
+        "top1": "bottles_processes:37"
+      },
+      {
+        "query": "non-crystalline polyester granules",
+        "rank": null,
+        "top1": null
+      }
+    ]
+  },
+  {
+    "mode": "dense-upstream",
+    "n": 12,
+    "hit@1": 0.5833333333333334,
+    "hit@5": 0.8333333333333334,
+    "mrr@5": 0.6625,
+    "mean_latency_ms": 216.3,
+    "cases": [
+      {
+        "query": "plastic drink bottle resin",
+        "rank": null,
+        "top1": "bottles_processes:312",
+        "top1_cosine": 0.4934040307998657,
+        "relevant_cosine": 0.3443291187286377,
+        "margin": -0.14907491207122803
+      },
+      {
+        "query": "aluminum rolled plate",
+        "rank": 1,
+        "top1": "bottles_processes:16",
+        "top1_cosine": 0.37261369824409485,
+        "relevant_cosine": 0.37261369824409485,
+        "margin": 0.0023256242275238037
+      },
+      {
+        "query": "electrical cable copper conductor",
+        "rank": 1,
+        "top1": "bottles_processes:37",
+        "top1_cosine": 0.49820542335510254,
+        "relevant_cosine": 0.49820542335510254,
+        "margin": 0.1243901252746582
+      },
+      {
+        "query": "PE-HD pellets",
+        "rank": 1,
+        "top1": "bottles_processes:11",
+        "top1_cosine": 0.3369360566139221,
+        "relevant_cosine": 0.3369360566139221,
+        "margin": 0.003198981285095215
+      },
+      {
+        "query": "polyethylene for film, low density",
+        "rank": 2,
+        "top1": "bottles_processes:467",
+        "top1_cosine": 0.5926539897918701,
+        "relevant_cosine": 0.5878772735595703,
+        "margin": -0.004776716232299805
+      },
+      {
+        "query": "glass jars and bottles for packaging",
+        "rank": 1,
+        "top1": "bottles_processes:407",
+        "top1_cosine": 0.4958633482456207,
+        "relevant_cosine": 0.4958633482456207,
+        "margin": 0.06300365924835205
+      },
+      {
+        "query": "reinforcing bars for concrete",
+        "rank": 5,
+        "top1": "bottles_processes:239",
+        "top1_cosine": 0.3767997622489929,
+        "relevant_cosine": 0.30513516068458557,
+        "margin": -0.07166460156440735
+      },
+      {
+        "query": "heat supplied by burning methane",
+        "rank": 1,
+        "top1": "bottles_processes:283",
+        "top1_cosine": 0.31003063917160034,
+        "relevant_cosine": 0.31003063917160034,
+        "margin": 0.03286495804786682
+      },
+      {
+        "query": "dumping waste glass in a landfill",
+        "rank": 1,
+        "top1": "bottles_processes:181",
+        "top1_cosine": 0.769258975982666,
+        "relevant_cosine": 0.769258975982666,
+        "margin": 0.18558359146118164
+      },
+      {
+        "query": "fiberglass insulation batts",
+        "rank": 4,
+        "top1": "bottles_processes:400",
+        "top1_cosine": 0.42403846979141235,
+        "relevant_cosine": 0.4140891432762146,
+        "margin": -0.009949326515197754
+      },
+      {
+        "query": "copper plumbing pipe",
+        "rank": 1,
+        "top1": "bottles_processes:308",
+        "top1_cosine": 0.4864775836467743,
+        "relevant_cosine": 0.4864775836467743,
+        "margin": 0.08115044236183167
+      },
+      {
+        "query": "non-crystalline polyester granules",
+        "rank": null,
+        "top1": "bottles_processes:122",
+        "top1_cosine": 0.5845574736595154,
+        "relevant_cosine": 0.5334998369216919,
+        "margin": -0.051057636737823486
+      }
+    ],
+    "mean_relevant_cosine": 0.4545,
+    "mean_margin": 0.0172
+  },
+  {
+    "mode": "dense-improved",
+    "n": 12,
+    "hit@1": 0.6666666666666666,
+    "hit@5": 0.8333333333333334,
+    "mrr@5": 0.75,
+    "mean_latency_ms": 140.8,
+    "cases": [
+      {
+        "query": "plastic drink bottle resin",
+        "rank": null,
+        "top1": "bottles_processes:498",
+        "top1_cosine": 0.6952551603317261,
+        "relevant_cosine": 0.6425741314888,
+        "margin": -0.052681028842926025
+      },
+      {
+        "query": "aluminum rolled plate",
+        "rank": 1,
+        "top1": "bottles_processes:16",
+        "top1_cosine": 0.6773134469985962,
+        "relevant_cosine": 0.6773134469985962,
+        "margin": 0.04501485824584961
+      },
+      {
+        "query": "electrical cable copper conductor",
+        "rank": 1,
+        "top1": "bottles_processes:37",
+        "top1_cosine": 0.7158336639404297,
+        "relevant_cosine": 0.7158336639404297,
+        "margin": 0.06597983837127686
+      },
+      {
+        "query": "PE-HD pellets",
+        "rank": 1,
+        "top1": "bottles_processes:11",
+        "top1_cosine": 0.7636972069740295,
+        "relevant_cosine": 0.7636972069740295,
+        "margin": 0.05898362398147583
+      },
+      {
+        "query": "polyethylene for film, low density",
+        "rank": 1,
+        "top1": "bottles_processes:122",
+        "top1_cosine": 0.762070894241333,
+        "relevant_cosine": 0.762070894241333,
+        "margin": 0.0055092573165893555
+      },
+      {
+        "query": "glass jars and bottles for packaging",
+        "rank": 1,
+        "top1": "bottles_processes:407",
+        "top1_cosine": 0.6636027097702026,
+        "relevant_cosine": 0.6636027097702026,
+        "margin": 0.014090478420257568
+      },
+      {
+        "query": "reinforcing bars for concrete",
+        "rank": 1,
+        "top1": "bottles_processes:72",
+        "top1_cosine": 0.628319501876831,
+        "relevant_cosine": 0.628319501876831,
+        "margin": 0.01237565279006958
+      },
+      {
+        "query": "heat supplied by burning methane",
+        "rank": 1,
+        "top1": "bottles_processes:446",
+        "top1_cosine": 0.6288001537322998,
+        "relevant_cosine": 0.6288001537322998,
+        "margin": 0.014786481857299805
+      },
+      {
+        "query": "dumping waste glass in a landfill",
+        "rank": 1,
+        "top1": "bottles_processes:181",
+        "top1_cosine": 0.7871578931808472,
+        "relevant_cosine": 0.7871578931808472,
+        "margin": 0.07046359777450562
+      },
+      {
+        "query": "fiberglass insulation batts",
+        "rank": null,
+        "top1": "bottles_processes:187",
+        "top1_cosine": 0.6306971311569214,
+        "relevant_cosine": 0.5663648247718811,
+        "margin": -0.06433230638504028
+      },
+      {
+        "query": "copper plumbing pipe",
+        "rank": 2,
+        "top1": "bottles_processes:37",
+        "top1_cosine": 0.6644299626350403,
+        "relevant_cosine": 0.6629503965377808,
+        "margin": -0.0014795660972595215
+      },
+      {
+        "query": "non-crystalline polyester granules",
+        "rank": 2,
+        "top1": "bottles_processes:421",
+        "top1_cosine": 0.7161476016044617,
+        "relevant_cosine": 0.6985877752304077,
+        "margin": -0.017559826374053955
+      }
+    ],
+    "mean_relevant_cosine": 0.6831,
+    "mean_margin": 0.0126
+  },
+  {
+    "mode": "hybrid",
+    "n": 12,
+    "hit@1": 0.5,
+    "hit@5": 0.8333333333333334,
+    "mrr@5": 0.6416666666666667,
+    "mean_latency_ms": 57.0,
+    "cases": [
+      {
+        "query": "plastic drink bottle resin",
+        "rank": null,
+        "top1": "bottles_processes:505"
+      },
+      {
+        "query": "aluminum rolled plate",
+        "rank": 2,
+        "top1": "bottles_processes:482"
+      },
+      {
+        "query": "electrical cable copper conductor",
+        "rank": 1,
+        "top1": "bottles_processes:37"
+      },
+      {
+        "query": "PE-HD pellets",
+        "rank": 1,
+        "top1": "bottles_processes:11"
+      },
+      {
+        "query": "polyethylene for film, low density",
+        "rank": 1,
+        "top1": "bottles_processes:122"
+      },
+      {
+        "query": "glass jars and bottles for packaging",
+        "rank": 1,
+        "top1": "bottles_processes:407"
+      },
+      {
+        "query": "reinforcing bars for concrete",
+        "rank": 5,
+        "top1": "bottles_processes:239"
+      },
+      {
+        "query": "heat supplied by burning methane",
+        "rank": 1,
+        "top1": "bottles_processes:446"
+      },
+      {
+        "query": "dumping waste glass in a landfill",
+        "rank": 1,
+        "top1": "bottles_processes:181"
+      },
+      {
+        "query": "fiberglass insulation batts",
+        "rank": null,
+        "top1": "bottles_processes:187"
+      },
+      {
+        "query": "copper plumbing pipe",
+        "rank": 2,
+        "top1": "bottles_processes:37"
+      },
+      {
+        "query": "non-crystalline polyester granules",
+        "rank": 2,
+        "top1": "bottles_processes:421"
+      }
+    ]
+  }
+]

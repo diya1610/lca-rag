@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LCA RAG</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="6" r="4"/><circle cx="7" cy="24" r="4"/><circle cx="25" cy="24" r="4"/>
+        <path d="M16 10v6M16 16l-9 4M16 16l9 4" fill="none" stroke-width="2"/>
+      </svg>
+      <div>
+        <h1>LCA RAG</h1>
+        <p class="tagline">Evidence-grounded retrieval for life cycle assessment</p>
+      </div>
+    </div>
+    <div class="stats" id="stats" aria-live="polite"></div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" class="tab active" data-tab="search" aria-selected="true">Search</button>
+    <button role="tab" class="tab" data-tab="ebom" aria-selected="false">eBOM analysis</button>
+    <button role="tab" class="tab" data-tab="browse" aria-selected="false">Browse hierarchy</button>
+  </nav>
+
+  <main>
+    <section id="tab-search" class="tabpanel">
+      <form id="search-form" class="card search-card" autocomplete="off">
+        <div class="query-row">
+          <input id="q" type="search" placeholder="Material, process or flow, e.g. bottle-grade PET" aria-label="Query" required>
+          <button type="submit" class="primary" id="go">Search</button>
+        </div>
+        <div class="examples" id="examples"></div>
+
+        <div class="grid filters">
+          <label>Source<select id="f-source"></select></label>
+          <label>Record kind<select id="f-kind"></select></label>
+          <label>Lifecycle stage<select id="f-stage"></select></label>
+          <label><span>Location <span class="hint">exact</span></span><input id="f-location" placeholder="e.g. RER, EU-27"></label>
+          <label><span>Reference unit <span class="hint">exact</span></span><input id="f-unit" placeholder="e.g. kg, MJ"></label>
+          <label>Indicator<select id="f-indicator"></select></label>
+        </div>
+
+        <div class="options">
+          <label class="check"><input type="checkbox" id="o-ai"> AI fallback <span class="hint">provisional, only when evidence is insufficient</span></label>
+          <select id="o-provider" aria-label="AI provider"></select>
+          <label class="check" id="dense-wrap"><input type="checkbox" id="o-dense"> Dense (cosine) fusion</label>
+          <label class="inline">Results <input id="o-topk" type="number" min="1" max="50" value="8"></label>
+        </div>
+      </form>
+
+      <div id="results" class="results" aria-live="polite">
+        <div class="empty">
+          <p>Search the 157,952 indexed records. Results are ranked candidates with citations, not verified process selections.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-ebom" class="tabpanel" hidden>
+      <div class="card">
+        <div id="drop" class="drop" tabindex="0" role="button" aria-label="Upload eBOM CSV">
+          <input type="file" id="ebom-file" accept=".csv,.tsv,.txt,text/csv" hidden>
+          <div class="drop-title">Drop an eBOM CSV here or <u>choose a file</u></div>
+          <div class="hint">Needs a material column and a quantity column; a unit column is strongly recommended.
+            Detected names include material, component, quantity, qty, weight_kg, unit, item_id, country.</div>
+          <div id="ebom-filename" class="drop-file"></div>
+        </div>
+        <div class="examples">
+          <button type="button" class="chip" id="ebom-sample">Use sample eBOM</button>
+          <a class="chip" href="/sample_ebom.csv" download>Download sample CSV</a>
+        </div>
+        <div class="grid filters">
+          <label>Indicator<select id="e-indicator"></select></label>
+          <label>Match against source<select id="e-source"></select></label>
+          <label><span>Unit for lines without one <span class="hint">never assumed</span></span><select id="e-unit"></select></label>
+        </div>
+        <div class="options">
+          <label class="check"><input type="checkbox" id="e-ai"> AI fallback for uncovered lines <span class="hint">provisional, totalled separately</span></label>
+          <select id="e-provider" aria-label="AI provider"></select>
+          <button type="button" class="primary" id="ebom-go" disabled>Analyse eBOM</button>
+        </div>
+      </div>
+      <div id="ebom-results" class="results" aria-live="polite"></div>
+    </section>
+
+    <section id="tab-browse" class="tabpanel" hidden>
+      <div class="card">
+        <p class="muted">Source → category tree read directly from the CSV category paths. Click a branch to expand it, or a label to search within that source.</p>
+        <ul class="tree" id="tree"></ul>
+      </div>
+    </section>
+  </main>
+
+  <aside id="drawer" class="drawer" hidden aria-label="Record detail">
+    <div class="drawer-head">
+      <h2 id="d-title">Record</h2>
+      <button class="ghost" id="d-close" aria-label="Close">✕</button>
+    </div>
+    <div id="d-body" class="drawer-body"></div>
+  </aside>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <footer class="foot">
+    Auditable capstone prototype — not a certified LCA calculator. Data: public lca_backend CSV exports (openLCA extraction).
+  </footer>
+</body>
+</html>

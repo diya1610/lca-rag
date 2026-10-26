@@ -1,0 +1,54 @@
+{
+  "sources": {
+    "bottles_processes": {
+      "file": "bottles_processes.csv",
+      "rows": 508,
+      "missing_reference_unit": 0,
+      "empty_impact_map": 0,
+      "distinct_names": 210,
+      "distinct_raw_names": 215,
+      "indicator_columns": 18,
+      "missing_indicator_cells": 0,
+      "non_numeric_indicator_cells": 0,
+      "zero_indicator_values": 2382
+    },
+    "lca_full_rag_data_units": {
+      "file": "lca_full_rag_data_units.csv",
+      "rows": 495,
+      "missing_reference_unit": 495,
+      "empty_impact_map": 0,
+      "distinct_names": 197,
+      "distinct_raw_names": 202,
+      "indicator_columns": 50,
+      "missing_indicator_cells": 0,
+      "non_numeric_indicator_cells": 0,
+      "zero_indicator_values": 5684
+    },
+    "openlca_flows": {
+      "file": "openlca_flows.csv",
+      "rows": 91472,
+      "missing_reference_unit": 0,
+      "empty_impact_map": 91472,
+      "distinct_names": 41281,
+      "distinct_raw_names": 42616,
+      "indicator_columns": 0,
+      "missing_indicator_cells": 0,
+      "non_numeric_indicator_cells": 0,
+      "zero_indicator_values": 0
+    },
+    "usda_flows": {
+      "file": "usda_flows.csv",
+      "rows": 65477,
+      "missing_reference_unit": 0,
+      "empty_impact_map": 65477,
+      "distinct_names": 13138,
+      "distinct_raw_names": 14501,
+      "indicator_columns": 0,
+      "missing_indicator_cells": 0,
+      "non_numeric_indicator_cells": 0,
+      "zero_indicator_values": 0
+    }
+  },
+  "total_records": 157952,
+  "hierarchy_nodes": 410
+}

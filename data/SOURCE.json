@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/saniyalakdawala/lca_backend",
+  "commit": "975ca407202304e57d1d4c5a94b821c2338bf21a",
+  "path": "data/",
+  "extraction": "CSV exports produced upstream by an openLCA extraction script over free LCA datasets"
+}
