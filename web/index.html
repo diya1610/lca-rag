@@ -80,11 +80,20 @@
           <label>Indicator<select id="e-indicator"></select></label>
           <label>Match against source<select id="e-source"></select></label>
           <label><span>Unit for lines without one <span class="hint">never assumed</span></span><select id="e-unit"></select></label>
+          <label>Grade by<select id="e-basis">
+            <option value="combined">Combined score (criticality, toxicity, GHG)</option>
+            <option value="ghg">GHG only</option></select></label>
+          <label>Scoring references<select id="e-scoring">
+            <option value="data">From the data (recommended)</option>
+            <option value="upstream">Upstream constants (reproduce lca_backend)</option></select></label>
+          <label class="check corr"><input type="checkbox" id="e-corr"> <span>Apply reviewed unit corrections
+            <span class="hint">cement and zinc ÷1000, labelled; see data/corrections.json</span></span></label>
         </div>
         <div class="options">
           <label class="check"><input type="checkbox" id="e-ai"> AI fallback for uncovered lines <span class="hint">provisional, totalled separately</span></label>
           <select id="e-provider" aria-label="AI provider"></select>
           <button type="button" class="primary" id="ebom-go" disabled>Analyse eBOM</button>
+          <button type="button" class="chip" id="ebom-clear-ai" title="Forget saved AI answers so the next run asks again">Clear saved AI answers</button>
         </div>
       </div>
       <div id="ebom-results" class="results" aria-live="polite"></div>

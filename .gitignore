@@ -5,3 +5,5 @@ __pycache__/
 *.tmp-*
 upstream/
 .DS_Store
+index/ai_cache.json
+index/*.tmp

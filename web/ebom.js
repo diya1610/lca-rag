@@ -16,7 +16,9 @@ const LINE_REASONS = {
   exact_factor_implausible: "The exact match's factor is implausible for its unit, so it is not used.",
   no_plausible_family_member: "No plausible material of the same family in the database.",
 };
-const eb = { text: null, name: null, result: null, sort: { key: "rank", dir: 1 }, scenarios: [] };
+// seq/whatifSeq: only the newest request may render, so fast option changes cannot be
+// overwritten by an older response arriving late.
+const eb = { text: null, name: null, result: null, sort: { key: "rank", dir: 1 }, scenarios: [], seq: 0, whatifSeq: 0 };
 
 function errorBanner(title, msg) {
   return h("div", { class: "banner error" }, h("div", {}, h("h3", {}, title), h("p", {}, msg)));
@@ -66,6 +68,14 @@ function initEbom() {
     analyseEbom();
   });
   $("#ebom-go").addEventListener("click", analyseEbom);
+  for (const id of ["#e-basis", "#e-scoring", "#e-corr"]) {
+    $(id).addEventListener("change", () => { if (eb.result) analyseEbom(); });
+  }
+  $("#ebom-clear-ai").addEventListener("click", async (e) => {
+    const { cleared } = await api("/ebom/clear-ai-cache", {});
+    e.target.textContent = `Cleared ${cleared} saved answer${cleared === 1 ? "" : "s"}`;
+    setTimeout(() => { e.target.textContent = "Clear saved AI answers"; }, 2500);
+  });
 }
 
 function loadEbomFile(f) {
@@ -95,23 +105,29 @@ function settings() {
     default_unit: $("#e-unit").value || null,
     use_ai: $("#e-ai").checked,
     provider: $("#e-provider").value,
+    grade_basis: $("#e-basis").value,
+    scoring: $("#e-scoring").value,
+    apply_corrections: $("#e-corr").checked,
   };
 }
 
 async function analyseEbom() {
   if (!eb.text) return;
   const body = settings();
+  const seq = ++eb.seq;
   const btn = $("#ebom-go");
   btn.disabled = true;
   $("#ebom-results").replaceChildren(h("div", { class: "empty" }, h("span", { class: "spinner" }), " ",
     body.use_ai ? "Matching lines, finding similar materials and asking the AI about the rest…" : "Matching lines against the index…"));
   try {
-    eb.result = await api("/ebom", body);
+    const result = await api("/ebom", body);
+    if (seq !== eb.seq) return;
+    eb.result = result;
     renderEbom();
   } catch (err) {
-    $("#ebom-results").replaceChildren(errorBanner("Could not analyse this eBOM", err.message));
+    if (seq === eb.seq) $("#ebom-results").replaceChildren(errorBanner("Could not analyse this eBOM", err.message));
   } finally {
-    btn.disabled = false;
+    if (seq === eb.seq) btn.disabled = false;
   }
 }
 
@@ -130,6 +146,16 @@ function renderEbom() {
   if (!r.climate) {
     out.push(h("div", { class: "banner insufficient" }, h("div", {}, h("h3", {}, "Scores and grades need Climate change"),
       h("p", { style: "margin:4px 0 0" }, `The grade, hotspots and recommendations use the GHG indicator. "${r.indicator}" is shown per line only.`))));
+  }
+  if (r.options.scoring === "upstream") {
+    out.push(h("div", { class: "banner insufficient" }, h("div", {}, h("h3", {}, "Upstream scoring constants"),
+      h("p", { style: "margin:4px 0 0" }, r.scoring.note))));
+  }
+  if (r.options.apply_corrections) {
+    const used = r.lines.filter((l) => l.correction || l.proxy?.corrected);
+    out.push(h("div", { class: "banner insufficient" }, h("div", {}, h("h3", {}, "Reviewed unit corrections are on"),
+      h("p", { style: "margin:4px 0 0" }, `${r.corrections.map((c) => c.name).join("; ")} divided by 1000. `
+        + (used.length ? `Used on: ${used.map((l) => l.item_id).join(", ")}.` : "No line in this eBOM uses them.")))));
   }
   out.push(h("div", { class: "dash-grid" }, radarCard(r), componentChart(r)));
   out.push(paretoChart(r));
@@ -162,6 +188,9 @@ function kpis(r) {
       h("div", { class: "grade-row" }, gradeBadge(p.grade, true),
         h("div", {}, h("div", { class: "v" }, p.score == null ? "—" : p.score.toFixed(1), h("small", {}, " / 100")),
           h("div", { class: "s" }, p.grade_text || ""))),
+      h("div", { class: "s" }, `Graded on ${p.grade_basis === "ghg" ? "GHG only" : "the combined score"} · `
+        + `combined ${p.combined_grade || "—"} (${p.combined_score == null ? "—" : p.combined_score.toFixed(1)}) · `
+        + `GHG-only ${p.ghg_grade || "—"} (${p.ghg_score == null ? "—" : p.ghg_score.toFixed(1)})`),
       h("div", { class: "s" }, `Data confidence: ${p.confidence} · ${pct(p.mass_coverage)} of mass covered`)),
     h("div", { class: "tile" + (p.hotspots.length ? " warn" : "") },
       h("div", { class: "k" }, "Hotspots"),
@@ -347,15 +376,17 @@ async function runWhatIf() {
     out.replaceChildren(h("p", { class: "calc-out err" }, "Add at least one swap with an alternative material."));
     return;
   }
+  const seq = ++eb.whatifSeq;
   const btn = $("#whatif-go");
   btn.disabled = true;
   out.replaceChildren(h("div", { class: "empty" }, h("span", { class: "spinner" }), " Re-running the pipeline…"));
   try {
-    renderWhatIf(await api("/ebom/whatif", { ...settings(), scenarios }));
+    const w = await api("/ebom/whatif", { ...settings(), scenarios });
+    if (seq === eb.whatifSeq && $("#whatif-results")) renderWhatIf(w);
   } catch (err) {
-    out.replaceChildren(h("p", { class: "calc-out err" }, err.message));
+    if (seq === eb.whatifSeq && $("#whatif-results")) $("#whatif-results").replaceChildren(h("p", { class: "calc-out err" }, err.message));
   } finally {
-    btn.disabled = false;
+    if ($("#whatif-go")) $("#whatif-go").disabled = false;
   }
 }
 
@@ -394,6 +425,7 @@ const COLS = [
   ["ghgs", "GHG score", (l) => l.scores?.ghg ?? -1],
   ["score", "Score", (l) => l.scores?.composite ?? -1],
   ["grade", "Grade", (l) => l.grade || "Z"],
+  ["ghg_grade", "GHG grade", (l) => l.ghg_grade || "Z"],
   ["confidence", "Confidence", (l) => ({ high: 0, medium: 1, low: 2 })[l.confidence] ?? 3],
   ["hotspot", "Hotspot", (l) => (l.hotspot ? 0 : 1)],
 ];
@@ -467,7 +499,9 @@ function drawRows() {
       h("td", {}, l.component),
       h("td", {}, l.material || "(empty)", l.original_material ? h("div", { class: "sub" }, `was ${l.original_material}`) : null),
       h("td", { class: "num" }, l.quantity != null ? `${fmt(l.quantity)} ${l.unit || "?"}` : (l.quantity_raw || "—")),
-      h("td", {}, h("span", { class: "status " + l.status }, STATUS_LABEL[l.status]), recCell ? h("div", { class: "sub" }, recCell) : null),
+      h("td", {}, h("span", { class: "status " + l.status }, STATUS_LABEL[l.status]),
+        l.correction || l.proxy?.corrected ? h("span", { class: "status corrected", title: "Reviewed ÷1000 unit correction applied" }, "corrected") : null,
+        recCell ? h("div", { class: "sub" }, recCell) : null),
       h("td", { class: "num" }, l.impact == null ? "—" : fmt(l.impact)),
       h("td", { class: "num" }, pct(l.share, 1)),
       h("td", { class: "num" }, num(l.scores?.criticality, 0)),
@@ -475,6 +509,7 @@ function drawRows() {
       h("td", { class: "num" }, num(l.scores?.ghg, 0)),
       h("td", { class: "num" }, num(l.scores?.composite)),
       h("td", {}, gradeBadge(l.grade)),
+      h("td", {}, gradeBadge(l.ghg_grade)),
       h("td", {}, l.confidence ? h("span", { class: `conf c-${l.confidence}` }, l.confidence) : "—"),
       h("td", {}, l.hotspot ? h("span", { class: "hot" }, "● yes") : ""),
       h("td", { class: "notes" }, notes.length ? h("details", {}, h("summary", {}, `${notes.length} note${notes.length > 1 ? "s" : ""}`),

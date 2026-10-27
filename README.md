@@ -43,7 +43,7 @@ your browser.
 python rag.py build            # ~6 s; atomic rebuild of index/lca_rag.sqlite
 python desktop.py              # Tkinter evidence client
 python server.py               # loopback API on http://127.0.0.1:8765
-python -m unittest discover -s tests -v    # 41 tests (the paper's 26 + Claude, web, eBOM)
+python -m unittest discover -s tests -v    # 44 tests (the paper's 26 + Claude, web, eBOM)
 python eval/evaluate.py        # 12-query development benchmark
 ```
 
@@ -109,6 +109,20 @@ described them as dataset 95th percentiles. The real 95th percentiles are 8.24, 
 from the data. Sub-scores a line cannot have (for example toxicity for an AI estimate) are
 left out, and the weights are re-normalised.
 
+**Options** (eBOM tab, or `analyse(..., scoring=, grade_basis=, apply_corrections=)`):
+
+- *Grade by*: the combined score (default) or **GHG only**. Both grades are always shown.
+- *Scoring references*: from the data (default) or the **upstream constants**. Upstream mode
+  reproduces lca_backend exactly, which means toxicity is about 0, so you can compare.
+- *Apply reviewed unit corrections* (off by default). It applies the entries in
+  `data/corrections.json`: cement and zinc are divided by 1000, each with its reason and
+  review date. Corrected values are labelled **corrected** everywhere. Aluminium and copper
+  are deliberately not corrected, because dividing by 1000 still gives implausible values,
+  so they need re-exporting from openLCA.
+- **AI answers are saved** to `index/ai_cache.json`, which is not committed. Demos therefore
+  show the same provisional values after a restart. "Clear saved AI answers" or
+  `POST /ebom/clear-ai-cache` makes the next run ask again.
+
 **Dashboard contents:**
 
 - **KPI cards:** total GHG split by basis, overall score and grade, hotspots, and the share of
@@ -137,7 +151,7 @@ left out, and the weights are re-normalised.
 | `eval/` | Benchmark cases, paraphrase cases, `evaluate.py`, result JSON |
 | `ebom.py` | eBOM analysis: column detection, exact → similar material → AI resolution, upstream-style scoring and grades, hotspots, sister materials, what-if scenarios |
 | `web/` | Web interface served by `server.py` (no build step, no external assets) |
-| `tests/` | 41 functional tests (the paper's 26 plus Claude, web and eBOM): real index, real loopback HTTP server, mocked providers |
+| `tests/` | 44 functional tests (the paper's 26 plus Claude, web and eBOM): real index, real loopback HTTP server, mocked providers |
 
 ## How it maps to the paper
 
@@ -204,7 +218,7 @@ left out, and the weights are re-normalised.
 | Indexed records | 157,952 | 157,952 |
 | Hierarchy nodes | 410 | 410 |
 | Distinct bottle process names | 210 | 210 normalized (215 raw strings) |
-| Automated tests | 26/26 | 26/26 of the paper's tests (41/41 including the additions) |
+| Automated tests | 26/26 | 26/26 of the paper's tests (44/44 including the additions) |
 | Dev benchmark Hit@1 / Hit@5 / MRR@5 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
 | Mean retrieval latency | 98.4 ms (Windows) | ~10–100 ms, depending on machine load |
 

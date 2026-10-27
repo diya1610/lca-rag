@@ -306,6 +306,8 @@ td.notes ul { margin: 4px 0 0; padding-left: 16px; }
 .status.provisional { background: var(--prov-soft); color: var(--prov); border: 1px dashed var(--prov); }
 .status.not_covered { background: var(--warn-soft); color: var(--warn); }
 .status.invalid { background: var(--danger-soft); color: var(--danger); }
+.status.corrected { background: var(--warn-soft); color: var(--warn); margin-left: 4px; }
+label.corr { flex-direction: row; align-items: flex-start; gap: 8px; color: var(--text); font-weight: 500; grid-column: span 1; }
 .conf { font-size: 12px; font-weight: 600; }
 .conf.c-high { color: var(--accent-strong); }
 .conf.c-medium { color: var(--warn); }

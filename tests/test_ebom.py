@@ -119,17 +119,54 @@ class EbomTests(unittest.TestCase):
             self.assertTrue(math.isclose(lines[item]["impact"], p["contribution"] * scale))
         self.assertEqual(out["product"]["tiers"]["evidence"], self.base["product"]["tiers"]["evidence"])
 
-    def test_ai_answers_are_reused_across_runs(self):
+    def test_ai_answers_are_saved_and_reused(self):
+        import tempfile
         import unittest.mock
         stub = stub_estimate()
-        ebom._AI_CACHE.clear()
-        with unittest.mock.patch.object(ai_fallback, "estimate", stub):
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.object(ebom, "AI_CACHE_PATH", Path(tmp) / "ai_cache.json"), \
+                unittest.mock.patch.object(ebom, "_AI_CACHE", None), \
+                unittest.mock.patch.object(ai_fallback, "estimate", stub):
             first = ebom.analyse(self.engine, SAMPLE, use_ai=True, provider="stub-cache")
             ebom.what_if(self.engine, SAMPLE, [{"swaps": [{"item_id": "B-001", "material": "HDPE"}]}],
                          use_ai=True, provider="stub-cache")
-        self.assertEqual(len(stub.calls), 2)  # once per uncovered material, not per run
+            self.assertEqual(len(stub.calls), 2)  # once per uncovered material, not per run
+            ebom._AI_CACHE = None                 # simulate a restart: reload from disk
+            ebom.analyse(self.engine, SAMPLE, use_ai=True, provider="stub-cache")
+            self.assertEqual(len(stub.calls), 2)
+            self.assertEqual(ebom.clear_ai_cache(), 2)
+            self.assertFalse((Path(tmp) / "ai_cache.json").exists())
         self.assertEqual(by_item(first)["B-007"]["status"], "provisional")
-        ebom._AI_CACHE.clear()
+
+    def test_upstream_scoring_mode(self):
+        up = ebom.analyse(self.engine, SAMPLE, scoring="upstream")
+        self.assertEqual(up["scoring"]["references_p95_per_kg"], ebom.UPSTREAM_REFS)
+        pet = by_item(up)["B-001"]["scores"]
+        self.assertLess(pet["toxicity"], 1)          # the upstream constants zero out toxicity
+        self.assertEqual(pet["criticality"], 40.0)   # keyword-only: "PET" is unknown upstream
+        with self.assertRaises(ebom.EbomError):
+            ebom.analyse(self.engine, SAMPLE, scoring="nope")
+
+    def test_ghg_only_grade(self):
+        out = ebom.analyse(self.engine, SAMPLE, grade_basis="ghg")
+        p = out["product"]
+        self.assertEqual(p["grade"], ebom.grade_for(p["ghg_score"]))
+        self.assertEqual(p["combined_grade"], ebom.grade_for(p["combined_score"]))
+        steel = by_item(out)["B-005"]
+        self.assertEqual(steel["grade"], steel["ghg_grade"])
+        self.assertEqual(steel["combined_grade"], "B")  # toxicity 100 drives the combined grade
+        self.assertEqual(steel["ghg_grade"], "A")
+
+    def test_reviewed_corrections_are_opt_in_and_labelled(self):
+        bom = "item_id,material,quantity,unit\nC1,Portland cement,2,kg\nZ1,special high grade zinc,0.5,kg\n"
+        off = by_item(ebom.analyse(self.engine, bom))
+        self.assertNotEqual(off["C1"]["record_id"], "bottles_processes:169")  # 903.5 is never used raw
+        self.assertEqual(off["C1"]["status"], "not_covered")  # concrete is not a cement proxy
+        on = by_item(ebom.analyse(self.engine, bom, apply_corrections=True))
+        self.assertEqual((on["C1"]["status"], on["C1"]["record_id"]), ("evidence", "bottles_processes:169"))
+        self.assertTrue(math.isclose(on["C1"]["factor"], 903.502 / 1000, rel_tol=1e-3))
+        self.assertIn("corrected_factor", [w["code"] for w in on["C1"]["warnings"]])
+        self.assertTrue(math.isclose(on["Z1"]["impact"], 3199.696 / 1000 * 0.5, rel_tol=1e-3))
 
     # -- scoring, hotspots, recommendations ---------------------------------------------
 

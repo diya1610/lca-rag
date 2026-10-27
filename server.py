@@ -4,7 +4,7 @@
 
 Web UI: GET /  (static files in web/)
 Endpoints: GET /health, GET /meta, GET /hierarchy[?parent=...], GET /record?id=...,
-           POST /query, POST /calculate, POST /ebom, POST /ebom/whatif
+           POST /query, POST /calculate, POST /ebom, POST /ebom/whatif, POST /ebom/clear-ai-cache
 """
 
 from __future__ import annotations
@@ -127,13 +127,15 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None):
             if not self._host_ok():
                 return
             path = urlparse(self.path).path
-            if path not in ("/query", "/calculate", "/ebom", "/ebom/whatif"):
+            if path not in ("/query", "/calculate", "/ebom", "/ebom/whatif", "/ebom/clear-ai-cache"):
                 self._send(404, {"error": "not_found"})
                 return
             body = self._body(MAX_EBOM_BYTES if path.startswith("/ebom") else MAX_BODY_BYTES)
             if body is None:
                 return
-            if path.startswith("/ebom"):
+            if path == "/ebom/clear-ai-cache":
+                self._send(200, {"cleared": ebom.clear_ai_cache()})
+            elif path.startswith("/ebom"):
                 if not isinstance(body.get("csv"), str):
                     self._send(400, {"error": "bad_request", "message": "'csv' text is required."})
                     return
@@ -141,7 +143,9 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None):
                 opts = dict(indicator=body.get("indicator") or "Climate change",
                             source=body.get("source") or None, default_unit=body.get("default_unit") or None,
                             use_ai=bool(body.get("use_ai", False)), provider=body.get("provider"),
-                            fallback=fallback)
+                            fallback=fallback, scoring=body.get("scoring") or "data",
+                            grade_basis=body.get("grade_basis") or "combined",
+                            apply_corrections=bool(body.get("apply_corrections", False)))
                 try:
                     if path == "/ebom":
                         out = ebom.analyse(*args, **opts)

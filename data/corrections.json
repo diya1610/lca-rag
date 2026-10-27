@@ -1,0 +1,19 @@
+{
+  "description": "Reviewed scale corrections for source rows that appear to be exported per 1000 kg while labelled per kg. Applied only when the user turns corrections on; corrected values are always labelled. Every indicator of a listed row is divided, because the whole row shares one reference amount. Aluminium and copper are deliberately not listed: dividing their factors by 1000 still gives implausible values, so their real reference amount is unknown and they stay excluded until re-exported from openLCA.",
+  "corrections": [
+    {
+      "record_id": "bottles_processes:169",
+      "name": "Portland cement (CEM I), CEMBUREAU production mix",
+      "divide_by": 1000,
+      "reason": "Climate change 903.5 per 'kg' is ~1000x the dataset median; 903.5 / 1000 = 0.90 kg CO2-eq/kg, in line with typical published values for Portland cement (about 0.8-0.95).",
+      "reviewed": "2026-10-27"
+    },
+    {
+      "record_id": "bottles_processes:489",
+      "name": "Special high grade zinc, primary production",
+      "divide_by": 1000,
+      "reason": "Climate change 3199.7 per 'kg' is ~1000x the dataset median; 3199.7 / 1000 = 3.2 kg CO2-eq/kg, in line with typical published values for primary zinc (about 3-4).",
+      "reviewed": "2026-10-27"
+    }
+  ]
+}

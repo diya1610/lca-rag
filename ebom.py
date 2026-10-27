@@ -37,6 +37,7 @@ import json
 import math
 import re
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import rag
@@ -51,10 +52,17 @@ AI_WORKERS = 4
 OUTLIER_RATIO = 50
 HOTSPOT_SHARE = 0.20
 MAX_SCENARIOS = 3
-# AI answers are reused for the life of the process, so the dashboard and what-if runs
-# show the same provisional values instead of re-asking a non-deterministic model.
-_AI_CACHE: dict = {}
+# AI answers are saved and reused (also across restarts), so the dashboard, what-if runs
+# and later demos show the same provisional values instead of re-asking a
+# non-deterministic model. Clear with clear_ai_cache() or POST /ebom/clear-ai-cache.
+AI_CACHE_PATH = rag.INDEX_DIR / "ai_cache.json"
 AI_CACHE_SIZE = 1000
+_AI_CACHE: dict | None = None
+_AI_LOCK = threading.Lock()
+CORRECTIONS_PATH = rag.DATA_DIR / "corrections.json"
+UPSTREAM_REFS = {"Climate change": 12.5, "Human toxicity": 150.0, "Metal depletion": 1.5}
+SCORING_MODES = ("data", "upstream")
+GRADE_BASES = ("combined", "ghg")
 SISTERS_PER_ITEM = 3
 
 # Scoring reverse-engineered from lca_backend/engine.py: composite = 0.30 criticality +
@@ -82,7 +90,7 @@ CRITICAL_MATERIALS = {  # upstream tiers (EU/US critical raw material lists)
 CRITICALITY_SCORES = {"high": 90.0, "medium": 55.0, "low": 20.0, "unknown": 40.0}
 # Fallback when no keyword matches (e.g. "bottle-grade PET"), by material family.
 FAMILY_CRITICALITY = {"steel": "low", "plastics": "low", "glass": "low", "paper": "low", "wood": "low",
-                      "concrete": "low", "aluminium": "medium", "copper": "medium", "zinc": "medium",
+                      "concrete": "low", "cement": "low", "aluminium": "medium", "copper": "medium", "zinc": "medium",
                       "lead": "medium", "tin": "medium", "titanium": "medium"}
 
 MASS_TO_KG = {"mg": 1e-6, "g": 1e-3, "gram": 1e-3, "grams": 1e-3, "kg": 1.0, "kgs": 1.0,
@@ -105,10 +113,12 @@ FAMILY_KEYWORDS = {
     "glass": "glass fiberglass fibreglass",
     "paper": "paper cardboard carton cartonboard corrugated kraft paperboard pulp",
     "wood": "wood timber plywood mdf osb spruce pine beech oak",
-    "concrete": "concrete cement mortar",
+    "concrete": "concrete",
+    # cement is ~7x more carbon-intensive than concrete, so it is not a concrete proxy
+    "cement": "cement mortar clinker",
 }
 KEYWORD_FAMILY = {kw: fam for fam, kws in FAMILY_KEYWORDS.items() for kw in kws.split()}
-TAG_FAMILY = {"polyethylene": "plastics", "plastic": "plastics", "cement": "concrete"}
+TAG_FAMILY = {"polyethylene": "plastics", "plastic": "plastics"}
 # Processes from these stages describe disposal or transport, not a material, so they are
 # never used as a similar-material proxy.
 NON_MATERIAL_STAGES = {"End-of-Life", "Transport & Packaging"}
@@ -265,14 +275,19 @@ def _clip(x: float) -> float:
 class Catalog:
     """Records with indicators, their material family, plausibility, and scoring references."""
 
-    def __init__(self, engine: rag.Engine, source: str | None, indicator: str):
+    def __init__(self, engine: rag.Engine, source: str | None, indicator: str,
+                 scoring: str = "data", corrections: dict | None = None):
         self.engine, self.source, self.indicator = engine, source, indicator
+        self.scoring, self.corrections = scoring, corrections or {}
         sql = ("SELECT id, name, unit, stage, location, raw_json, impacts_json FROM records "
                "WHERE impacts_json != '{}' AND unit IS NOT NULL")
         rows = engine._all(sql + (" AND source = ?" if source else ""), (source,) if source else ())
         self.records, by_unit_label = [], {}
         for r in rows:
             impacts = json.loads(r["impacts_json"])
+            if r["id"] in self.corrections:
+                div = self.corrections[r["id"]]["divide_by"]
+                impacts = {k: v / div for k, v in impacts.items()}
             tags = [t.strip().lower() for t in json.loads(r["raw_json"]).get("material_tags", "").split(",")]
             fam = next((TAG_FAMILY.get(t, t) for t in tags if TAG_FAMILY.get(t, t) in FAMILY_KEYWORDS), None)
             self.records.append({"id": r["id"], "name": r["name"], "unit": r["unit"], "stage": r["stage"],
@@ -288,6 +303,9 @@ class Catalog:
         self.by_id = {r["id"]: r for r in self.records}
         # scoring references: 95th percentile of plausible positive per-kg factors
         self.refs = {}
+        if scoring == "upstream":
+            self.refs = dict(UPSTREAM_REFS)
+            return
         for label in ("Climate change", *TOX_BLEND):
             vals = sorted(r["impacts"][label] for r in self.records
                           if r["unit"] == "kg" and r["impacts"].get(label, 0) > 0
@@ -326,6 +344,7 @@ class Catalog:
         factors = [r["factor"] for r in pool]
         return {"id": chosen["id"], "name": chosen["name"], "location": chosen["location"],
                 "factor": chosen["factor"], "family": family, "kind": kind,
+                "corrected": self.corrections.get(chosen["id"]),
                 "family_size": len(pool), "family_min": min(factors), "family_max": max(factors),
                 "citation": self.engine.record(chosen["id"])["citation"]}
 
@@ -347,12 +366,48 @@ class Catalog:
 # Analysis
 # ---------------------------------------------------------------------------
 
+def load_corrections() -> dict:
+    data = json.loads(CORRECTIONS_PATH.read_text(encoding="utf-8"))
+    return {c["record_id"]: c for c in data["corrections"]}
+
+
+def _ai_cache() -> dict:
+    global _AI_CACHE
+    if _AI_CACHE is None:
+        try:
+            entries = json.loads(AI_CACHE_PATH.read_text(encoding="utf-8"))
+            _AI_CACHE = {tuple(e["key"]): e["answer"] for e in entries}
+        except (OSError, ValueError, KeyError, TypeError):
+            _AI_CACHE = {}
+    return _AI_CACHE
+
+
+def _save_ai_cache() -> None:
+    entries = [{"key": list(k), "answer": v} for k, v in _ai_cache().items()]
+    tmp = AI_CACHE_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(AI_CACHE_PATH)
+
+
+def clear_ai_cache() -> int:
+    with _AI_LOCK:
+        n = len(_ai_cache())
+        _ai_cache().clear()
+        AI_CACHE_PATH.unlink(missing_ok=True)
+    return n
+
+
 def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
             source: str | None = "bottles_processes", default_unit: str | None = None,
             use_ai: bool = False, provider: str | None = None, fallback=None,
-            overrides: dict | None = None, memo: dict | None = None) -> dict:
+            overrides: dict | None = None, memo: dict | None = None,
+            scoring: str = "data", grade_basis: str = "combined", apply_corrections: bool = False) -> dict:
     """`overrides` maps item_id -> replacement material (what-if). `memo` caches line
-    resolutions and AI answers across calls in one request."""
+    resolutions and AI answers across calls in one request. `scoring` picks data-derived or
+    upstream reference values, `grade_basis` grades on the combined or GHG-only score, and
+    `apply_corrections` applies the reviewed scale corrections in data/corrections.json."""
+    if scoring not in SCORING_MODES or grade_basis not in GRADE_BASES:
+        raise EbomError(f"scoring must be one of {SCORING_MODES}; grade_basis one of {GRADE_BASES}.")
     lines, columns = parse_csv(text)
     memo = {} if memo is None else memo
     if overrides:
@@ -364,13 +419,16 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
             if ln["item_id"] in overrides:
                 ln["original_material"] = ln["material"]
                 ln["material"] = overrides[ln["item_id"]].strip()
-    catalog = memo.get(("catalog", source, indicator)) or Catalog(engine, source, indicator)
-    memo[("catalog", source, indicator)] = catalog
+    ckey = ("catalog", source, indicator, scoring, apply_corrections)
+    catalog = memo.get(ckey) or Catalog(engine, source, indicator, scoring,
+                                        load_corrections() if apply_corrections else None)
+    memo[ckey] = catalog
     climate = is_climate(indicator)
 
     results = []
     for ln in lines:
-        key = ("line", ln["material"], ln["quantity_raw"], ln["unit"], default_unit, indicator, source)
+        key = ("line", ln["material"], ln["quantity_raw"], ln["unit"], default_unit, indicator, source,
+               apply_corrections)
         if key not in memo:
             memo[key] = _resolve_line(engine, catalog, ln, indicator, source, default_unit)
         identity = ("line", "item_id", "component", "material", "quantity_raw", "location", "cost",
@@ -386,18 +444,22 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
 
         def run(r):
             key = ("ai", r["material"], r["unit"], indicator, source, provider)
-            cache = _AI_CACHE if fallback_is_default else memo
-            if key not in cache:
+            persistent = fallback_is_default
+            with _AI_LOCK:
+                answer = (_ai_cache() if persistent else memo).get(key)
+            if answer is None:
                 answer = fallback(query=r["material"], indicator=indicator, reference_unit=r["unit"],
                                   constraints={"source": source, "unit": r["unit"], "location": r["location"]},
                                   context=r.get("_context", [])[:5], provider=provider)
-                if answer.get("status") == "unavailable":
-                    r["provisional"] = _provisional(answer, r["quantity"], climate)
-                    return  # do not cache outages
-                if len(cache) >= AI_CACHE_SIZE:
-                    cache.pop(next(iter(cache)))
-                cache[key] = answer
-            r["provisional"] = _provisional(cache[key], r["quantity"], climate)
+                if answer.get("status") != "unavailable":  # never cache outages
+                    with _AI_LOCK:
+                        cache = _ai_cache() if persistent else memo
+                        if persistent and len(cache) >= AI_CACHE_SIZE:
+                            cache.pop(next(iter(cache)))
+                        cache[key] = answer
+                        if persistent:
+                            _save_ai_cache()
+            r["provisional"] = _provisional(answer, r["quantity"], climate)
             if r["provisional"]["contribution"] is not None:
                 r.update(status="provisional", tier="provisional",
                          impact=r["provisional"]["impact_kg"] if climate else None)
@@ -409,8 +471,8 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
     for r in results:
         r.pop("_context", None)
 
-    _score_lines(results, catalog, climate)
-    product = _product(results, climate)
+    _score_lines(results, catalog, climate, grade_basis)
+    product = _product(results, climate, grade_basis)
     recs = _recommendations(results, catalog) if climate else []
     return {
         "indicator": indicator,
@@ -419,8 +481,10 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
         "climate": climate,
         "columns": columns,
         "product": product,
-        "components": _aggregate(results, "component", climate),
-        "materials": _aggregate(results, "material_key", climate),
+        "components": _aggregate(results, "component", climate, grade_basis),
+        "materials": _aggregate(results, "material_key", climate, grade_basis),
+        "options": {"scoring": scoring, "grade_basis": grade_basis, "apply_corrections": apply_corrections},
+        "corrections": list(catalog.corrections.values()),
         "lines": results,
         "recommendations": recs,
         "scoring": {
@@ -428,9 +492,12 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
             "abs_ghg_ref_kg": ABS_GHG_REF_KG, "references_p95_per_kg": catalog.refs,
             "grade_bands": [{"grade": g, "max": b} for g, b in GRADE_BANDS] + [{"grade": "D", "max": None}],
             "hotspot_share": HOTSPOT_SHARE,
-            "note": "Formula and weights follow lca_backend/engine.py. Per-kg references are the "
-                    "95th percentile of plausible dataset factors (upstream's hard-coded values "
-                    "were 12.5 / 150 / 1.5 and left toxicity near zero).",
+            "mode": scoring, "grade_basis": grade_basis,
+            "note": ("Formula and weights follow lca_backend/engine.py. Per-kg references are the "
+                     "95th percentile of plausible dataset factors (upstream's hard-coded values "
+                     "were 12.5 / 150 / 1.5 and left toxicity near zero).") if scoring == "data" else
+                    ("Upstream mode: lca_backend's hard-coded references 12.5 / 150 / 1.5 and keyword-only "
+                     "criticality, reproduced for comparison. With this data the toxicity sub-score is ~0."),
         },
         "note": "Evidence uses exact source records; proxies use a similar material from the "
                 "same family in the database; provisional values are AI estimates. Each "
@@ -473,11 +540,18 @@ def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, de
     if out["status"] == "ok" and out["answer"]:
         exact_id = out["answer"]["record_id"]
         factor = out["answer"]["value"]
+        correction = catalog.corrections.get(exact_id)
+        if correction:
+            factor /= correction["divide_by"]
         ratio = catalog.implausible(factor, unit)
         if not ratio:
-            calc = engine.calculate(exact_id, indicator, qty, unit)
+            engine.calculate(exact_id, indicator, qty, unit)  # unit and quantity checks
+            if correction:
+                res["warnings"].append({"code": "corrected_factor", "record_id": exact_id,
+                                        "message": f"Source factor divided by {correction['divide_by']:g} "
+                                                   f"(reviewed correction): {correction['reason']}"})
             return {**res, "status": "evidence", "tier": "evidence", "factor": factor, "record_id": exact_id,
-                    "contribution": calc["result"], "impact": calc["result"]}
+                    "correction": correction, "contribution": factor * qty, "impact": factor * qty}
         res["warnings"].append({
             "code": "implausible_factor", "record_id": exact_id, "factor": factor,
             "message": f"The exact match {exact_id} has factor {factor:.4g}, {ratio:.0f}x the median "
@@ -535,7 +609,7 @@ def _confidence(r: dict) -> str | None:
     return "low"
 
 
-def _score_lines(results: list[dict], catalog: Catalog, climate: bool) -> None:
+def _score_lines(results: list[dict], catalog: Catalog, climate: bool, grade_basis: str = "combined") -> None:
     total = sum(r["impact"] for r in results if r["impact"] is not None)
     ranked = sorted((r for r in results if r["impact"] is not None), key=lambda r: -r["impact"])
     for rank, r in enumerate(ranked, 1):
@@ -551,7 +625,7 @@ def _score_lines(results: list[dict], catalog: Catalog, climate: bool) -> None:
             continue
         is_mass = r["mass_kg"] is not None
         sub = {}
-        tier, sub["criticality"] = criticality(r["material"], r["family"])
+        tier, sub["criticality"] = criticality(r["material"], r["family"] if catalog.scoring == "data" else None)
         if not is_mass:
             sub["criticality"] = None  # energy or service inputs are not materials
         ref = catalog.refs.get("Climate change")
@@ -572,7 +646,9 @@ def _score_lines(results: list[dict], catalog: Catalog, climate: bool) -> None:
         r["scores"] = {**{k: (round(v, 2) if v is not None else None) for k, v in sub.items()},
                        "composite": round(composite, 2), "criticality_tier": tier if is_mass else None,
                        "intensity": intensity, "reweighted": len(avail) < 3}
-        r["grade"] = grade_for(composite)
+        r["ghg_grade"] = grade_for(sub["ghg"])
+        r["combined_grade"] = grade_for(composite)
+        r["grade"] = r["combined_grade"] if grade_basis == "combined" else r["ghg_grade"]
 
 
 def _tiers(rows) -> dict:
@@ -590,7 +666,7 @@ def _weighted(rows, key) -> float | None:
     return sum(i * v for i, v in pairs) / w if w else None
 
 
-def _aggregate(results: list[dict], key: str, climate: bool) -> list[dict]:
+def _aggregate(results: list[dict], key: str, climate: bool, grade_basis: str = "combined") -> list[dict]:
     groups: dict[str, list] = {}
     for r in results:
         if r["status"] != "invalid":
@@ -602,7 +678,7 @@ def _aggregate(results: list[dict], key: str, climate: bool) -> list[dict]:
         impact = sum(tiers.values())
         covered_mass = sum(r["mass_kg"] for r in rows if r["mass_kg"] and r["impact"] is not None)
         mass = sum(r["mass_kg"] for r in rows if r["mass_kg"])
-        score = _weighted(rows, "composite")
+        score = _weighted(rows, "composite" if grade_basis == "combined" else "ghg")
         out.append({
             "name": rows[0]["component"] if key == "component" else rows[0]["material"],
             "lines": len(rows),
@@ -628,14 +704,16 @@ def _aggregate(results: list[dict], key: str, climate: bool) -> list[dict]:
     return sorted(out, key=lambda g: -(g["impact"] or 0))
 
 
-def _product(results: list[dict], climate: bool) -> dict:
+def _product(results: list[dict], climate: bool, grade_basis: str = "combined") -> dict:
     tiers = _tiers(results)
     total = sum(tiers.values())
     scored = [r for r in results if r["impact"] is not None]
     mass_total = sum(r["mass_kg"] for r in results if r["mass_kg"])
     mass_covered = sum(r["mass_kg"] for r in scored if r["mass_kg"])
     mass_cov = mass_covered / mass_total if mass_total else None
-    score = _weighted(results, "composite")
+    combined = _weighted(results, "composite")
+    ghg_only = _weighted(results, "ghg")
+    score = combined if grade_basis == "combined" else ghg_only
     counts = {s: sum(r["status"] == s for r in results)
               for s in ("evidence", "proxy", "provisional", "not_covered", "invalid")}
     conf = {c: sum(r["confidence"] == c for r in scored) for c in ("high", "medium", "low")}
@@ -661,6 +739,9 @@ def _product(results: list[dict], climate: bool) -> dict:
         "score": score,
         "grade": grade_for(score),
         "grade_text": GRADE_TEXT.get(grade_for(score)),
+        "grade_basis": grade_basis,
+        "combined_score": combined, "combined_grade": grade_for(combined),
+        "ghg_score": ghg_only, "ghg_grade": grade_for(ghg_only),
         "subscores": {k: _weighted(results, k) for k in WEIGHTS},
         "hotspots": [{"item_id": r["item_id"], "component": r["component"], "material": r["material"],
                       "impact": r["impact"], "share": r["share"]} for r in hotspots],
@@ -712,12 +793,14 @@ def _summary(a: dict) -> dict:
 
 def what_if(engine: rag.Engine, text: str, scenarios: list[dict], indicator: str = "Climate change",
             source: str | None = "bottles_processes", default_unit: str | None = None,
-            use_ai: bool = False, provider: str | None = None, fallback=None, explainer=None) -> dict:
+            use_ai: bool = False, provider: str | None = None, fallback=None, explainer=None,
+            scoring: str = "data", grade_basis: str = "combined", apply_corrections: bool = False) -> dict:
     """Re-run the full pipeline for up to three scenarios of material swaps."""
     if not scenarios or len(scenarios) > MAX_SCENARIOS:
         raise EbomError(f"Give between 1 and {MAX_SCENARIOS} scenarios.")
     memo: dict = {}
-    base = analyse(engine, text, indicator, source, default_unit, use_ai, provider, fallback, memo=memo)
+    opts = dict(scoring=scoring, grade_basis=grade_basis, apply_corrections=apply_corrections)
+    base = analyse(engine, text, indicator, source, default_unit, use_ai, provider, fallback, memo=memo, **opts)
     base_lines = {l["item_id"]: l for l in base["lines"]}
     out = []
     for i, sc in enumerate(scenarios, 1):
@@ -725,7 +808,7 @@ def what_if(engine: rag.Engine, text: str, scenarios: list[dict], indicator: str
         if not swaps:
             raise EbomError(f"Scenario {i} has no material swaps.")
         res = analyse(engine, text, indicator, source, default_unit, use_ai, provider, fallback,
-                      overrides=swaps, memo=memo)
+                      overrides=swaps, memo=memo, **opts)
         b, s = _summary(base), _summary(res)
         delta = (s["total"] - b["total"]) if s["total"] is not None and b["total"] is not None else None
         changes = []
