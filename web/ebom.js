@@ -261,7 +261,7 @@ function radarCard(r) {
     if (text != null) e.textContent = text;
     return e;
   };
-  const svg = el("svg", { viewBox: `0 0 ${size} ${size}`, class: "radar", role: "img",
+  const svg = el("svg", { viewBox: `-40 -6 ${size + 80} ${size + 12}`, class: "radar", role: "img",
     "aria-label": axes.map(([k, l]) => `${l} ${s[k] == null ? "n/a" : s[k].toFixed(0)}`).join(", ") });
   for (const ring of [25, 50, 75, 100]) {
     svg.append(el("polygon", { class: "ring", points: axes.map((_, i) => pt(i, ring).join(",")).join(" ") }));
@@ -285,7 +285,10 @@ function radarCard(r) {
   }
   return h("div", { class: "card" },
     h("h3", { class: "card-title" }, "Sub-scores (0–100, higher = worse)"),
-    h("p", { class: "hint", style: "margin:0 0 6px" }, "GHG-weighted across items, as in the upstream engine. Composite = 30% criticality + 35% toxicity + 35% GHG."),
+    h("p", { class: "hint", style: "margin:0 0 6px" }, (r.product.product_scoring === "upstream"
+      ? "GHG-weighted across items, as in the upstream engine."
+      : "GHG from the product's total and intensity; criticality and toxicity mass-weighted over materials.")
+      + " Composite = 30% criticality + 35% toxicity + 35% GHG."),
     svg);
 }
 

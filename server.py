@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,12 +26,14 @@ HOST = "127.0.0.1"
 MAX_BODY_BYTES = 64 * 1024
 MAX_EBOM_BYTES = 1024 * 1024
 WEB_DIR = Path(__file__).resolve().parent / "web"
+FONT_RE = re.compile(r"/fonts/([A-Za-z]+-(?:normal|italic)\.woff2)")
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/app.css": ("app.css", "text/css; charset=utf-8"),
     "/ebom.js": ("ebom.js", "text/javascript; charset=utf-8"),
     "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+    "/paper.svg": ("paper.svg", "image/svg+xml"),
     "/sample_ebom.csv": ("sample_ebom.csv", "text/csv; charset=utf-8"),
     "/sample_iphone16e_bom.csv": ("sample_iphone16e_bom.csv", "text/csv; charset=utf-8"),
 }
@@ -110,7 +113,12 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
                 return
             url = urlparse(self.path)
             qs = {k: v[0] for k, v in parse_qs(url.query).items()}
-            if url.path in STATIC:
+            font = FONT_RE.fullmatch(url.path)
+            if font and (WEB_DIR / "fonts" / font.group(1)).is_file():
+                data = (WEB_DIR / "fonts" / font.group(1)).read_bytes()
+                self._headers(200, "font/woff2", len(data))
+                self.wfile.write(data)
+            elif url.path in STATIC:
                 name, ctype = STATIC[url.path]
                 data = (WEB_DIR / name).read_bytes()
                 self._headers(200, ctype, len(data))

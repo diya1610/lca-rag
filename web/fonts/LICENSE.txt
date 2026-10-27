@@ -1,0 +1,1 @@
+Fonts: Fraunces, Instrument Sans, Martian Mono. All licensed under the SIL Open Font License 1.1 (https://openfontlicense.org). Downloaded from Google Fonts (latin subset).
