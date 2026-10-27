@@ -143,18 +143,8 @@ function fillIndicators() {
 }
 
 async function init() {
-  const [health, meta] = await Promise.all([api("/health"), api("/meta")]);
+  const meta = await api("/meta");
   state.meta = meta;
-  const pills = [
-    h("span", { class: "pill" }, h("b", {}, health.records.toLocaleString()), "records"),
-    h("span", { class: "pill" }, h("b", {}, health.hierarchy_nodes), "hierarchy nodes"),
-    h("span", { class: "pill", title: health.commit || "" }, "commit", h("b", { class: "mono" }, (health.commit || "").slice(0, 7))),
-  ];
-  for (const [name, ok] of Object.entries(meta.providers)) {
-    pills.push(h("span", { class: "pill", title: ok ? `${name} ready` : `${name} not configured` },
-      h("i", { class: "dot" + (ok ? " on" : "") }), name));
-  }
-  $("#stats").replaceChildren(...pills);
 
   fillSelect($("#f-source"), Object.keys(meta.sources), "All sources");
   fillSelect($("#f-kind"), meta.kinds, "Any kind");
