@@ -338,8 +338,10 @@ def family_of(text: str) -> str | None:
     if "oxide" in toks:  # aluminium oxide is a ceramic, not aluminium metal
         return None
     found = None
-    for tok in toks:
-        found = KEYWORD_FAMILY.get(tok, found)
+    for i, tok in enumerate(toks):
+        # "glass filled", "glass fibre reinforced": the keyword only modifies the material
+        if tok in KEYWORD_FAMILY and not {"filled", "reinforced"} & set(toks[i + 1:i + 3]):
+            found = KEYWORD_FAMILY[tok]
     return found
 
 
@@ -374,6 +376,19 @@ def _clip(x: float) -> float:
 # Similar-material catalogue
 # ---------------------------------------------------------------------------
 
+def _record_family(tag_family: str | None, name: str) -> str | None:
+    """Family of a database record. The name's head (before the first comma) decides; a
+    material tag is used only when the head names no other family. This keeps e.g.
+    "Porocalce plaster production" (tagged glass) out of the glass family, and
+    "Chlorine, production mix for PVC production" out of plastics."""
+    head = family_of(name.split(",")[0])
+    if head:
+        return head
+    if tag_family and any(w in rag.tokens(name.split(",")[0]) for w in ("plaster", "mortar", "lime", "sand")):
+        return None
+    return tag_family
+
+
 class Catalog:
     """Records with indicators, their material family, plausibility, and scoring references."""
 
@@ -401,7 +416,7 @@ class Catalog:
                                  "factor": impacts.get(indicator),
                                  # name fallback uses only the head before the first comma, so
                                  # "Chlorine, production mix for PVC production" is not a plastic
-                                 "family": fam or family_of(r["name"].split(",")[0])})
+                                 "family": _record_family(fam, r["name"])})
             for label, v in impacts.items():
                 if v:
                     by_unit_label.setdefault((r["unit"], label), []).append(abs(v))

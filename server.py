@@ -26,14 +26,13 @@ HOST = "127.0.0.1"
 MAX_BODY_BYTES = 64 * 1024
 MAX_EBOM_BYTES = 1024 * 1024
 WEB_DIR = Path(__file__).resolve().parent / "web"
-FONT_RE = re.compile(r"/fonts/([A-Za-z]+-(?:normal|italic)\.woff2)")
+FONT_RE = re.compile(r"/fonts/([A-Za-z]+-(?:normal|italic)\d*\.woff2)")
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/app.css": ("app.css", "text/css; charset=utf-8"),
     "/ebom.js": ("ebom.js", "text/javascript; charset=utf-8"),
     "/favicon.svg": ("favicon.svg", "image/svg+xml"),
-    "/paper.svg": ("paper.svg", "image/svg+xml"),
     "/sample_ebom.csv": ("sample_ebom.csv", "text/csv; charset=utf-8"),
     "/sample_iphone16e_bom.csv": ("sample_iphone16e_bom.csv", "text/csv; charset=utf-8"),
 }

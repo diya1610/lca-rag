@@ -133,8 +133,9 @@ async function analyseEbom() {
   const seq = ++eb.seq;
   const btn = $("#ebom-go");
   btn.disabled = true;
-  $("#ebom-results").replaceChildren(h("div", { class: "empty" }, h("span", { class: "spinner" }), " ",
-    body.use_ai ? "Matching lines, finding similar materials and asking the AI about the rest…" : "Matching lines against the index…"));
+  loadingSteps($("#ebom-results"), ["Reading your eBOM", "Matching each material to the database",
+    "Finding similar materials", body.use_ai ? "Asking the AI about uncovered materials" : null,
+    "Scoring, grading and finding hotspots"], body.use_ai ? 2200 : 600);
   try {
     const result = await api("/ebom", body);
     if (seq !== eb.seq) return;
@@ -220,14 +221,14 @@ function kpis(r) {
   return h("div", { class: "kpis" },
     h("div", { class: "tile" },
       h("div", { class: "k" }, "Total GHG"),
-      h("div", { class: "v" }, p.total == null ? "—" : fmt(p.total), h("small", {}, " kg CO₂-eq")),
+      h("div", { class: "v", "data-count": p.total ?? "" }, p.total == null ? "—" : fmt(p.total), h("small", {}, " kg CO₂-eq")),
       tierBar,
       h("div", { class: "s" }, Object.entries(p.tier_shares).map(([k, v]) => `${TIER_LABEL[k]} ${pct(v)}`).join(" · ")),
       p.intensity != null ? h("div", { class: "s" }, `${fmt(p.intensity)} kg CO₂-eq per kg of product`) : null),
     h("div", { class: "tile" },
       h("div", { class: "k" }, "Overall score & grade"),
       h("div", { class: "grade-row" }, gradeBadge(p.grade, true),
-        h("div", {}, h("div", { class: "v" }, p.score == null ? "—" : p.score.toFixed(1), h("small", {}, " / 100")),
+        h("div", {}, h("div", { class: "v", "data-count": p.score == null ? "" : Number(p.score.toFixed(1)) }, p.score == null ? "—" : p.score.toFixed(1), h("small", {}, " / 100")),
           h("div", { class: "s" }, p.grade_text || ""))),
       h("div", { class: "s" }, `Graded on ${p.grade_basis === "ghg" ? "GHG only" : "the combined score"} · `
         + `combined ${p.combined_grade || "—"} (${p.combined_score == null ? "—" : p.combined_score.toFixed(1)}) · `
@@ -235,7 +236,7 @@ function kpis(r) {
       h("div", { class: "s" }, `Data confidence: ${p.confidence} · ${pct(p.mass_coverage)} of mass covered`)),
     h("div", { class: "tile" + (p.hotspots.length ? " warn" : "") },
       h("div", { class: "k" }, "Hotspots"),
-      h("div", { class: "v" }, p.hotspots.length),
+      h("div", { class: "v", "data-count": p.hotspots.length }, String(p.hotspots.length)),
       h("div", { class: "s" }, p.hotspots.length
         ? p.hotspots.map((x) => `${x.component} (${pct(x.share)})`).join(" · ")
         : "No item above 20% of total GHG")),
@@ -293,9 +294,11 @@ function radarCard(r) {
 }
 
 function segmentBar(segments, max) {
-  return h("div", { class: "track" }, h("div", { class: "stack", style: `width:${max > 0 ? (segments.reduce((a, s) => a + s.impact, 0) / max) * 100 : 0}%` },
-    segments.filter((s) => s.impact > 0).map((s) => h("i", { class: `seg t-${s.tier}`, style: `flex:${s.impact}`,
-      title: `${s.item_id ? s.item_id + " · " : ""}${s.material}: ${fmt(s.impact)} kg CO₂-eq (${TIER_LABEL[s.tier]})` }))));
+  // The tooltip sits on the track: the rounded stack clips its children.
+  const parts = segments.filter((s) => s.impact > 0);
+  const tip = parts.map((s) => `${s.material}: ${fmt(s.impact)} kg (${TIER_LABEL[s.tier]})`).join(" · ");
+  return h("div", { class: "track", "data-tip": tip }, h("div", { class: "stack", style: `width:${max > 0 ? (parts.reduce((a, s) => a + s.impact, 0) / max) * 100 : 0}%` },
+    parts.map((s) => h("i", { class: `seg t-${s.tier}`, style: `flex:${s.impact}` }))));
 }
 
 function tierLegend() {
@@ -386,7 +389,7 @@ function recommendationsPanel(r) {
         h("div", { class: "sub" }, "Lower-impact sister materials:"),
         rec.sisters.map((s) => h("div", { class: "sister" },
           h("div", { class: "sister-main" },
-            h("button", { type: "button", class: "linkish", onclick: () => openRecord(s.id, eb.result.indicator) }, s.name),
+            h("button", { type: "button", class: "linkish", title: s.name, onclick: () => openRecord(s.id, eb.result.indicator) }, shortName(s.name)),
             h("div", { class: "sub" }, `factor ${fmt(s.factor)} · item ${fmt(s.impact)} kg CO₂-eq · `,
               h("b", { class: "good" }, `−${pct(s.reduction)}`),
               ` · cost ${rec.current_cost ? `n/a (current ${rec.current_cost})` : "n/a"}`)),
@@ -456,7 +459,8 @@ async function runWhatIf() {
   const seq = ++eb.whatifSeq;
   const btn = $("#whatif-go");
   btn.disabled = true;
-  out.replaceChildren(h("div", { class: "empty" }, h("span", { class: "spinner" }), " Re-running the pipeline…"));
+  loadingSteps(out, ["Applying your material swaps", "Re-running matching and scoring", "Comparing scenarios",
+    $("#e-ai").checked ? "Writing design notes" : null], 1200);
   try {
     const w = await api("/ebom/whatif", { ...settings(), scenarios });
     if (seq === eb.whatifSeq && $("#whatif-results")) renderWhatIf(w);

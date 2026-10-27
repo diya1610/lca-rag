@@ -36,6 +36,62 @@ async function api(path, body) {
   return data;
 }
 
+// ---------------------------------------------------------------- motion helpers
+// Cards fade and slide up as they enter the viewport; headline numbers count up;
+// long requests show stepped progress. CSS disables all of it for reduced motion.
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const revealIO = "IntersectionObserver" in window ? new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    e.target.classList.add("in");
+    e.target.querySelectorAll("[data-count]").forEach(countUp);
+    if (e.target.dataset.count) countUp(e.target);
+    revealIO.unobserve(e.target);
+  }
+}, { rootMargin: "0px 0px -40px 0px" }) : null;
+
+function revealWithin(root) {
+  root.querySelectorAll(".card, .tile, .banner, .rec, .sc-result").forEach((el) => {
+    if (el.classList.contains("reveal") || el.closest(".drawer")) return;
+    if (!revealIO || reduceMotion) { el.querySelectorAll("[data-count]").forEach(countUp); return; }
+    el.classList.add("reveal");
+    revealIO.observe(el);
+  });
+}
+
+function countUp(el) {
+  if (el.dataset.counted) return;
+  el.dataset.counted = "1";
+  const target = Number(el.dataset.count);
+  const node = [...el.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+  if (!node || !Number.isFinite(target)) return;
+  const final = node.textContent;
+  if (reduceMotion) return;
+  const start = performance.now(), dur = 700;
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur), k = 1 - Math.pow(1 - t, 3);
+    node.textContent = t < 1 ? (Number.isInteger(target) ? String(Math.round(target * k)) : fmt(target * k)) : final;
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function loadingSteps(container, steps, every = 1400) {
+  const items = steps.filter(Boolean).map((t) => h("li", {}, t));
+  container.replaceChildren(h("div", { class: "loading", role: "status" }, h("span", { class: "spinner" }), h("ol", {}, items)));
+  let i = 0;
+  const mark = () => items.forEach((li, k) => { li.className = k < i ? "done" : k === i ? "now" : ""; });
+  mark();
+  const timer = setInterval(() => {
+    if (!container.isConnected || !container.contains(items[0])) return clearInterval(timer);
+    if (i < items.length - 1) { i += 1; mark(); }
+  }, every);
+}
+
+new MutationObserver((muts) => {
+  for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) revealWithin(n.parentElement || n);
+}).observe(document.body, { childList: true, subtree: true });
+
 const fmt = (v) => {
   if (typeof v !== "number") return String(v);
   if (v === 0) return "0";
@@ -176,8 +232,9 @@ async function search() {
   };
   const btn = $("#go");
   btn.disabled = true;
-  $("#results").replaceChildren(h("div", { class: "empty" }, h("span", { class: "spinner" }), " ",
-    body.use_ai ? "Retrieving evidence (the AI fallback may take a few seconds)…" : "Retrieving evidence…"));
+  loadingSteps($("#results"), ["Normalising the query", "Routing through the category hierarchy",
+    "Ranking candidates with BM25 and rank fusion", "Checking indicator and reference unit",
+    body.use_ai ? "Asking the AI only if the evidence is insufficient" : null], 700);
   try {
     renderResult(await api("/query", body));
   } catch (err) {
@@ -217,7 +274,7 @@ function renderResult(r) {
 function answerCard(a) {
   return h("div", { class: "card answer" },
     h("div", { class: "label" }, "Source evidence"),
-    h("div", { class: "bignum" }, fmt(a.value), " ", h("small", {}, `${a.indicator} per 1 ${a.per_reference_unit}`)),
+    h("div", { class: "bignum", "data-count": a.value }, fmt(a.value), " ", h("small", {}, `${a.indicator} per 1 ${a.per_reference_unit}`)),
     h("div", { class: "cite" }, "Cited from ", h("span", { class: "mono" }, a.citation)),
     h("p", { class: "note", style: "padding:0;margin:8px 0 0" }, a.note),
     h("button", { type: "button", class: "ghost", style: "margin-top:10px", onclick: () => openRecord(a.record_id, a.indicator) },
