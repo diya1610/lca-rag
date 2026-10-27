@@ -1,5 +1,5 @@
 {
-  "description": "Reviewed scale corrections for source rows that appear to be exported per 1000 kg while labelled per kg. Applied only when the user turns corrections on; corrected values are always labelled. Every indicator of a listed row is divided, because the whole row shares one reference amount. Aluminium and copper are deliberately not listed: dividing their factors by 1000 still gives implausible values, so their real reference amount is unknown and they stay excluded until re-exported from openLCA.",
+  "description": "Reviewed scale corrections for source rows that appear to be exported per 1000 kg while labelled per kg. Applied only when the user turns corrections on; corrected values are always labelled. Every indicator of a listed row is divided, because the whole row shares one reference amount. Aluminium and copper are deliberately not listed: dividing their factors by 1000 still gives implausible values, so their real reference amount is unknown and they stay excluded until re-exported from openLCA. 'unit_relabels' lists record groups whose unit label is wrong; they are excluded unless corrections are on, and then used with the actual unit.",
   "corrections": [
     {
       "record_id": "bottles_processes:169",
@@ -13,6 +13,19 @@
       "name": "Special high grade zinc, primary production",
       "divide_by": 1000,
       "reason": "Climate change 3199.7 per 'kg' is ~1000x the dataset median; 3199.7 / 1000 = 3.2 kg CO2-eq/kg, in line with typical published values for primary zinc (about 3-4).",
+      "reviewed": "2026-10-27"
+    }
+  ],
+  "unit_relabels": [
+    {
+      "name_prefixes": [
+        "Electricity Mix",
+        "Electricity grid mix",
+        "Electricity from"
+      ],
+      "unit": "MJ",
+      "actual_unit": "kWh",
+      "reason": "Read per MJ, these grid factors imply e.g. Germany 0.63 kg CO2-eq/MJ = 2.3 kg/kWh and Poland 4.0 kg/kWh, far above any power plant (coal is about 1.0-1.2 kg/kWh). Read per kWh they match typical published grid intensities (DE 0.63, PL 1.1, FR 0.15, NO 0.03). The export's unit label is therefore taken to be wrong. Without corrections these records are never used.",
       "reviewed": "2026-10-27"
     }
   ]

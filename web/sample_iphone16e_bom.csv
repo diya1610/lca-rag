@@ -1,0 +1,16 @@
+Component,Estimated Weight (g),Main Materials,Recyclability,Electricity_Usage_kWh
+Battery,40,"Li-ion (Li, Co, Ni, Graphite), Aluminum, Copper",Partially recyclable,1.8
+Logic Board,30,"FR4, Copper, Gold, Tin, Silicon, Plastics",Partially recyclable,1.5
+Charging Port (USB-C),5,"Copper, Steel, Plastic",Recyclable,0.5
+C1 Modem Chip,1,"Silicon, Copper, Gold",Difficult to recycle,1.2
+DRAM (integrated with C1),1,"Silicon, Copper",Difficult to recycle,0.5
+7nm Transceiver,1,"Silicon, Copper",Difficult to recycle,0.5
+Ceramic Shield Front Glass,25,"Glass, Aluminum Oxide, Plastics",Recyclable,0.5
+Front Camera (12MP),3,"Glass, Silicon, Plastic",Recyclable,0.3
+Top Earpiece Speaker,2,"Copper, Plastic",Recyclable,0.1
+Taptic Engine,3,"Steel, Plastic, Copper",Recyclable,0.5
+Bottom Speaker,3,"Steel, Plastic, Copper",Recyclable,0.1
+Main Microphone,1,"Steel, Plastic",Recyclable,0.5
+SIM Assembly,2,"Plastic, Copper",Recyclable,0.5
+Back Glass,30,"Glass, Aluminum Oxide",Recyclable,0.5
+Flex Cable for Flash Assembly,1,"Copper, Plastic",Recyclable,0.5

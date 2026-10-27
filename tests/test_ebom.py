@@ -23,6 +23,7 @@ import rag  # noqa: E402
 import server  # noqa: E402
 
 SAMPLE = (ROOT / "web" / "sample_ebom.csv").read_text(encoding="utf-8")
+IPHONE = (ROOT / "web" / "sample_iphone16e_bom.csv").read_text(encoding="utf-8")
 
 
 def by_item(result: dict) -> dict:
@@ -234,6 +235,119 @@ class EbomTests(unittest.TestCase):
         exp = res["scenarios"][0]["explanation"]
         self.assertEqual((exp["source"], exp["text"]), ("ai", "AI note"))
         self.assertIn("AI-written", exp["label"])
+
+    # -- multi-material eBOMs (iPhone 16e format) -------------------------------------
+
+    def test_multi_material_format(self):
+        rows, cols = ebom.parse_csv(IPHONE)
+        self.assertEqual((cols["material"], cols["quantity"], cols["unit_from_header"]),
+                         ("Main Materials", "Estimated Weight (g)", "g"))
+        self.assertEqual((cols["energy"], cols["energy_unit"], cols["recyclability"]),
+                         ("Electricity_Usage_kWh", "kWh", "Recyclability"))
+        self.assertEqual(rows[0]["materials"], ["Li-ion (Li, Co, Ni, Graphite)", "Aluminum", "Copper"])
+        lines = ebom.expand_rows(rows, cols)
+        battery = [l for l in lines if l["component"] == "Battery"]
+        self.assertEqual([l["item_id"] for l in battery], ["01.1", "01.2", "01.3", "01.E"])
+        mats = [float(l["quantity_raw"]) for l in battery[:3]]
+        self.assertAlmostEqual(sum(mats), 40.0)
+        self.assertGreater(mats[0], mats[1])  # ranked: the first-listed material is the main one
+        eq = ebom.expand_rows(rows, cols, "equal")
+        self.assertAlmostEqual(float(eq[0]["quantity_raw"]), 40 / 3)
+        self.assertEqual(battery[3]["unit"], "kWh")
+
+    def test_electricity_needs_reviewed_relabel(self):
+        off = by_item(ebom.analyse(self.engine, IPHONE, grid="EU-27"))
+        self.assertEqual((off["01.E"]["status"], off["01.E"]["reasons"]), ("not_covered", ["unit_label_unreliable"]))
+        on = ebom.analyse(self.engine, IPHONE, apply_corrections=True, grid="DE")
+        bat = by_item(on)["01.E"]
+        self.assertEqual((bat["status"], bat["unit"], bat["grid"]), ("evidence", "kWh", "DE"))
+        self.assertTrue(0.3 < bat["factor"] < 1.3)  # a per-kWh grid intensity
+        self.assertTrue(math.isclose(bat["impact"], bat["factor"] * 1.8))
+        self.assertIn("corrected_factor", [w["code"] for w in bat["warnings"]])
+
+    def test_reference_grid_and_eco_ideas(self):
+        cn = by_item(ebom.analyse(self.engine, IPHONE))  # default grid: China reference value
+        bat = cn["01.E"]
+        self.assertEqual((bat["status"], bat["tier"], bat["grid"]), ("reference", "reference", "CN"))
+        self.assertTrue(math.isclose(bat["impact"], 0.950 * 1.8))
+        self.assertIn("reference_grid", [w["code"] for w in bat["warnings"]])
+
+        def transport(url, payload, headers):
+            return {"message": {"content": json.dumps({"ideas": [
+                {"type": "material", "idea": "Use recycled cobalt in the cathode.", "rationale": "Battery is the hotspot."}]})}}
+        ok = ai_fallback.ideas({"component": "Battery"}, provider="ollama", transport=transport)
+        self.assertEqual((ok["status"], ok["ideas"][0]["type"]), ("ok", "material"))
+        bad = ai_fallback.ideas({}, provider="ollama", transport=lambda *a: {"message": {"content": json.dumps(
+            {"ideas": [{"type": "magic", "idea": "x", "rationale": "y"}]})}})
+        self.assertEqual(bad["status"], "rejected")
+
+    def test_generic_and_end_of_life_matches(self):
+        lines = by_item(ebom.analyse(self.engine, IPHONE))
+        glass = lines["14.1"]                 # bare "Glass": family typical, not an arbitrary record
+        self.assertEqual((glass["status"], glass["proxy"]["kind"]), ("proxy", "family typical"))
+        alu = lines["01.2"]                   # the top match for "Aluminum" is a waste process
+        self.assertIn("exact_match_not_a_material", alu["reasons"])
+        self.assertIsNone(lines["07.2"]["family"])  # aluminium oxide is not aluminium metal
+
+    def test_ai_asked_once_per_material_and_composition(self):
+        stub = stub_estimate()
+        out = ebom.analyse(self.engine, IPHONE, use_ai=True, fallback=stub)
+        self.assertEqual(len(stub.calls), len(set(stub.calls)))
+        self.assertIn("Copper", stub.calls)
+        coppers = [l for l in out["lines"] if l["material"] == "Copper"]
+        self.assertTrue(len(coppers) > 3 and all(l["status"] == "provisional" for l in coppers))
+
+        def composer(row):
+            n = len(row["materials"])
+            return {"status": "ok", "fractions": {m: 1 / n for m in row["materials"]}, "assumptions": ["even"]}
+        split = by_item(ebom.analyse(self.engine, IPHONE, split_mode="ai", use_ai=True, fallback=stub,
+                                     composer=composer))
+        self.assertEqual(split["01.1"]["composition"]["mode"], "ai")
+        self.assertAlmostEqual(split["01.1"]["composition"]["fraction"], 1 / 3)
+
+        def bad(url, payload, headers):
+            return {"message": {"content": json.dumps({"fractions": {"Glass": 0.9}, "assumptions": ["x"]})}}
+        res = ai_fallback.composition("Back Glass", ["Glass", "Aluminum Oxide"], 30, "g",
+                                      provider="ollama", transport=bad)
+        self.assertEqual(res["status"], "rejected")  # must cover exactly the listed materials
+
+    def test_component_hotspots_and_rate_limit_retry(self):
+        import unittest.mock
+        out = ebom.analyse(self.engine, IPHONE, apply_corrections=True)
+        total = out["product"]["total"]
+        for c in out["components"]:  # a row's material and electricity lines are summed
+            lines = [l for l in out["lines"] if l["component"] == c["name"] and l["impact"] is not None]
+            if c["impact"]:
+                self.assertTrue(math.isclose(c["impact"], sum(l["impact"] for l in lines)))
+                self.assertEqual(c["hotspot"], c["impact"] / total > 0.20)
+            self.assertTrue(all(l["hotspot"] == c["hotspot"] for l in lines))
+        bom = "component,material,quantity,unit\nBody,HDPE,30,g\nBody,LDPE,30,g\nBody,bottle-grade PET,10,g\nCap,steel rebar,20,g\n"
+        res = ebom.analyse(self.engine, bom)
+        body = [l for l in res["lines"] if l["component"] == "Body"]
+        self.assertTrue(all(l["share"] < 0.5 for l in body))
+        self.assertEqual([h["component"] for h in res["product"]["hotspots"]][0], "Body")
+        calls = []
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n): return b'{"ok": 1}'
+
+        def urlopen(req, timeout):
+            calls.append(1)
+            if len(calls) == 1:
+                raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {"retry-after": "0"}, None)
+            return Resp()
+        with unittest.mock.patch("urllib.request.urlopen", urlopen), unittest.mock.patch("time.sleep"):
+            self.assertEqual(ai_fallback._http_post_json("https://example.invalid", {}, {}), {"ok": 1})
+        self.assertEqual(len(calls), 2)
+
+    def test_energy_lines_do_not_zero_the_product_score(self):
+        p = ebom.analyse(self.engine, IPHONE, apply_corrections=True)["product"]
+        self.assertGreater(p["subscores"]["ghg"], 30)   # ~5 kg CO2-eq for a 148 g product
+        self.assertTrue(math.isclose(p["intensity"], p["total"] / p["mass_total_kg"]))
+        up = ebom.analyse(self.engine, IPHONE, apply_corrections=True, scoring="upstream")["product"]
+        self.assertLess(up["score"], p["score"])  # upstream GHG-weighting is kept only in upstream mode
 
     # -- HTTP -----------------------------------------------------------------------
 

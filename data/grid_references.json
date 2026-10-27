@@ -1,0 +1,9 @@
+{
+  "description": "Grid carbon intensities for manufacturing regions that the LCA database does not cover. These are external reference values, not database records: results that use them are labelled 'Reference value'. Values are the fallback intensities used for the same iPhone 16e eBOM in the AI4LCI notebook (live ElectricityMap data replaced by fixed values there); they are approximate and vary by year and source.",
+  "source": "O. Pedoussaut, 'AI4LCI: Life Cycle Inventory Estimation with Generative AI', Kaggle notebook (gen-ai-for-lca-inventory), Step 8a fallback_intensity",
+  "url": "https://www.kaggle.com/code/olivierpedoussaut/gen-ai-for-lca-inventory",
+  "grids": [
+    {"code": "CN", "name": "China grid (reference)", "g_co2_per_kwh": 950},
+    {"code": "US-CAL-CISO", "name": "USA, California grid (reference)", "g_co2_per_kwh": 400}
+  ]
+}

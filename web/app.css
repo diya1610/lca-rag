@@ -228,6 +228,8 @@ a.chip { text-decoration: none; }
   color-mix(in srgb, var(--series-evidence) 35%, var(--surface)) 4px 7px); }
 .t-provisional { background: repeating-linear-gradient(135deg, var(--series-prov) 0 5px,
   color-mix(in srgb, var(--series-prov) 45%, var(--surface)) 5px 8px); }
+.t-reference { background: repeating-linear-gradient(90deg, var(--series-evidence) 0 3px,
+  color-mix(in srgb, var(--series-evidence) 25%, var(--surface)) 3px 6px); }
 .tierbar { display: flex; gap: 2px; height: 8px; margin: 8px 0 4px; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
 .seg { display: block; min-width: 2px; }
 .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
@@ -254,6 +256,9 @@ a.chip { text-decoration: none; }
 .rec { border: 1px solid var(--border); border-radius: 10px; padding: 12px; min-width: 0; }
 .rec.hotspot { border-color: var(--warn); }
 .advice { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+.ideas-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.ideas-wrap .chip { margin-top: 8px; }
+.ideas-out { margin-top: 6px; }
 .sisters { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .sister { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px; background: var(--surface-2); border-radius: 8px; }
 .sister-main { min-width: 0; }
@@ -303,6 +308,7 @@ td.notes ul { margin: 4px 0 0; padding-left: 16px; }
 .status { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; text-transform: uppercase; letter-spacing: .04em; }
 .status.evidence { background: var(--accent-soft); color: var(--accent-strong); }
 .status.proxy { background: var(--accent-soft); color: var(--accent-strong); border: 1px dashed var(--accent); }
+.status.reference { background: var(--accent-soft); color: var(--accent-strong); border: 1px dotted var(--accent); }
 .status.provisional { background: var(--prov-soft); color: var(--prov); border: 1px dashed var(--prov); }
 .status.not_covered { background: var(--warn-soft); color: var(--warn); }
 .status.invalid { background: var(--danger-soft); color: var(--danger); }

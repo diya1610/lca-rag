@@ -3,9 +3,9 @@
 // what-if simulator, sortable item table. Uses $, h, api, fmt, option, openRecord and
 // state from app.js. All data is inserted as text.
 
-const TIER_LABEL = { evidence: "Exact record", proxy: "Similar material", provisional: "AI estimate" };
-const STATUS_LABEL = { evidence: "Exact record", proxy: "Similar material", provisional: "AI estimate",
-  not_covered: "Not covered", invalid: "Invalid line" };
+const TIER_LABEL = { evidence: "Exact record", proxy: "Similar material", reference: "Reference value", provisional: "AI estimate" };
+const STATUS_LABEL = { evidence: "Exact record", proxy: "Similar material", reference: "Reference value",
+  provisional: "AI estimate", not_covered: "Not covered", invalid: "Invalid line" };
 const LINE_REASONS = {
   ...REASONS,
   no_candidates: "No record with this material and this exact reference unit.",
@@ -14,6 +14,10 @@ const LINE_REASONS = {
   ambiguous_quantity: "Quantity like 1,500 could mean 1.5 or 1500; write it without the comma.",
   missing_material: "Material name is empty.",
   exact_factor_implausible: "The exact match's factor is implausible for its unit, so it is not used.",
+  exact_match_not_a_material: "The closest record is a disposal or transport process, not the material itself.",
+  unit_label_unreliable: "Grid electricity records are labelled per MJ but are really per kWh; they are used only with reviewed corrections on.",
+  generic_material: "A bare material name; the family's typical value is used instead of an arbitrary record.",
+  no_grid_mix: "No electricity grid mix for this location in the database.",
   no_plausible_family_member: "No plausible material of the same family in the database.",
 };
 // seq/whatifSeq: only the newest request may render, so fast option changes cannot be
@@ -47,6 +51,11 @@ function initEbom() {
   fillEbomIndicators();
   $("#e-source").addEventListener("change", fillEbomIndicators);
   $("#e-unit").replaceChildren(option("", "Don't assume (skip those lines)"), ...m.units.map((u) => option(u)));
+  $("#e-grid").replaceChildren(
+    h("optgroup", { label: "Reference values (not in the database)" },
+      m.grid_references.map((g) => option(g.code, `${g.code} · ${g.name}, ${g.g_co2_per_kwh} g/kWh`))),
+    h("optgroup", { label: "Database grids (need reviewed corrections)" }, m.grids.map((g) => option(g))));
+  $("#e-grid").value = m.grid_references.some((g) => g.code === "CN") ? "CN" : m.grids[0];
   $("#e-provider").replaceChildren(...$("#o-provider").cloneNode(true).children);
   $("#e-provider").value = $("#o-provider").value;
 
@@ -68,7 +77,12 @@ function initEbom() {
     analyseEbom();
   });
   $("#ebom-go").addEventListener("click", analyseEbom);
-  for (const id of ["#e-basis", "#e-scoring", "#e-corr"]) {
+  $("#ebom-iphone").addEventListener("click", async () => {
+    const res = await fetch("/sample_iphone16e_bom.csv");
+    setEbomText(await res.text(), "iPhone_16e_BoM.csv");
+    analyseEbom();
+  });
+  for (const id of ["#e-basis", "#e-scoring", "#e-corr", "#e-split", "#e-grid"]) {
     $(id).addEventListener("change", () => { if (eb.result) analyseEbom(); });
   }
   $("#ebom-clear-ai").addEventListener("click", async (e) => {
@@ -106,6 +120,8 @@ function settings() {
     use_ai: $("#e-ai").checked,
     provider: $("#e-provider").value,
     grade_basis: $("#e-basis").value,
+    split_mode: $("#e-split").value,
+    grid: $("#e-grid").value,
     scoring: $("#e-scoring").value,
     apply_corrections: $("#e-corr").checked,
   };
@@ -151,15 +167,40 @@ function renderEbom() {
     out.push(h("div", { class: "banner insufficient" }, h("div", {}, h("h3", {}, "Upstream scoring constants"),
       h("p", { style: "margin:4px 0 0" }, r.scoring.note))));
   }
+  const split = r.lines.filter((l) => l.composition);
+  if (split.length) {
+    const mode = split[0].composition.mode;
+    out.push(h("div", { class: "banner insufficient" }, h("div", {},
+      h("h3", {}, "Component masses were split across their listed materials"),
+      h("p", { style: "margin:4px 0 0" }, mode === "ai"
+        ? "An AI estimated each component's material composition (validated: fractions of exactly the listed materials, summing to 1). Treat the split as provisional."
+        : `Your file lists several materials per component without their masses, so each component's mass was split ${mode === "equal" ? "equally" : "by listed order (first-listed material as the main one)"}. This is an assumption; choose "AI-estimated composition" with the AI fallback on for a better estimate.`))));
+  }
+  const refLines = r.lines.filter((l) => l.status === "reference");
+  if (refLines.length) {
+    const g = refLines[0].reference;
+    out.push(h("div", { class: "banner insufficient" }, h("div", {},
+      h("h3", {}, `Electricity uses a reference grid: ${g.name}`),
+      h("p", { style: "margin:4px 0 0" }, `${g.g_co2_per_kwh} g CO₂-eq/kWh for ${refLines.length} electricity line${refLines.length === 1 ? "" : "s"}. `
+        + `The LCA database has only European grids, so this external value (${g.source}) is used and labelled "Reference value". Change it under "Electricity grid".`))));
+  }
+  const elec = r.lines.filter((l) => l.material === "electricity");
+  const elecOff = elec.filter((l) => l.reasons.includes("unit_label_unreliable") && l.status !== "provisional");
+  if (elecOff.length) {
+    const kwh = elecOff.reduce((a, l) => a + (l.quantity || 0), 0);
+    out.push(h("div", { class: "banner insufficient" }, h("div", {},
+      h("h3", {}, `${fmt(kwh)} kWh of electricity is not counted`),
+      h("p", { style: "margin:4px 0 0" }, "The database's grid records are labelled per MJ but are really per kWh (read per MJ, Germany would emit 2.3 kg CO₂ per kWh, more than any power plant). Turn on reviewed corrections to use them per kWh, or enable the AI fallback."))));
+  }
   if (r.options.apply_corrections) {
     const used = r.lines.filter((l) => l.correction || l.proxy?.corrected);
     out.push(h("div", { class: "banner insufficient" }, h("div", {}, h("h3", {}, "Reviewed unit corrections are on"),
-      h("p", { style: "margin:4px 0 0" }, `${r.corrections.map((c) => c.name).join("; ")} divided by 1000. `
+      h("p", { style: "margin:4px 0 0" }, `${r.corrections.map((c) => c.name).join("; ")} divided by 1000; grid electricity used per kWh. `
         + (used.length ? `Used on: ${used.map((l) => l.item_id).join(", ")}.` : "No line in this eBOM uses them.")))));
   }
   out.push(h("div", { class: "dash-grid" }, radarCard(r), componentChart(r)));
   out.push(paretoChart(r));
-  if (r.recommendations.length) out.push(recommendationsPanel(r));
+  if (r.recommendations.length || r.product.hotspots.length) out.push(recommendationsPanel(r));
   out.push(whatIfPanel(r));
   out.push(itemsTable(r));
   out.push(materialsTable(r));
@@ -182,7 +223,7 @@ function kpis(r) {
       h("div", { class: "v" }, p.total == null ? "—" : fmt(p.total), h("small", {}, " kg CO₂-eq")),
       tierBar,
       h("div", { class: "s" }, Object.entries(p.tier_shares).map(([k, v]) => `${TIER_LABEL[k]} ${pct(v)}`).join(" · ")),
-      p.intensity != null ? h("div", { class: "s" }, `${fmt(p.intensity)} kg CO₂-eq per kg of covered mass`) : null),
+      p.intensity != null ? h("div", { class: "s" }, `${fmt(p.intensity)} kg CO₂-eq per kg of product`) : null),
     h("div", { class: "tile" },
       h("div", { class: "k" }, "Overall score & grade"),
       h("div", { class: "grade-row" }, gradeBadge(p.grade, true),
@@ -278,27 +319,60 @@ function componentChart(r) {
 }
 
 function paretoChart(r) {
-  const items = r.lines.filter((l) => l.impact != null).sort((a, b) => b.impact - a.impact);
+  // Pareto per BOM row (component): stacked by basis, with cumulative share.
+  const comps = r.components.filter((c) => c.impact != null && c.impact > 0);
   const card = h("div", { class: "card chart" },
     h("h3", { class: "card-title" }, "GHG contribution per item (Pareto)"), tierLegend(),
-    h("p", { class: "hint", style: "margin:-4px 0 8px" }, "Sorted by contribution; the right column is the cumulative share. Items above 20% are hotspots."));
-  const max = items.length ? items[0].impact : 0;
+    h("p", { class: "hint", style: "margin:-4px 0 8px" }, `Each item is a row of your eBOM, sorted by contribution; the right column is the cumulative share. Items above ${r.scoring.hotspot_share * 100}% are hotspots.`));
+  const max = comps.length ? comps[0].impact : 0;
   let cum = 0;
-  for (const l of items) {
-    cum += l.share || 0;
+  comps.forEach((c, i) => {
+    cum += c.share || 0;
     card.append(h("div", { class: "barrow pareto" },
-      h("div", { class: "lbl", title: `${l.component} · ${l.material}` }, `${l.rank}. ${l.component}`, h("span", { class: "hint" }, ` · ${l.material}`)),
-      h("div", { class: "track" }, h("div", { class: `bar t-${l.tier}`, style: `width:${max ? (l.impact / max) * 100 : 0}%`,
-        title: `${fmt(l.impact)} kg CO₂-eq · ${TIER_LABEL[l.tier]}` })),
-      h("div", { class: "val" }, `${pct(l.share, 1)}`, l.hotspot ? h("span", { class: "hot" }, " ●") : null),
+      h("div", { class: "lbl", title: `${c.name} · ${c.materials.join(", ")}` }, `${i + 1}. ${c.name}`, h("span", { class: "hint" }, ` · ${c.materials.join(", ")}`)),
+      segmentBar(c.segments, max),
+      h("div", { class: "val" }, pct(c.share, 1), c.hotspot ? h("span", { class: "hot" }, " ●") : null),
       h("div", { class: "val cum" }, pct(cum))));
-  }
+  });
   return card;
+}
+
+function hotspotIdeas(r) {
+  const hs = r.product.hotspots;
+  if (!hs.length) return null;
+  return h("div", { class: "ideas-wrap" }, hs.map((hsp) => {
+    const comp = r.components.find((c) => c.name === hsp.component) || {};
+    const lines = r.lines.filter((l) => l.component === hsp.component);
+    const out = h("div", { class: "ideas-out" });
+    const btn = h("button", { type: "button", class: "chip", onclick: async () => {
+      btn.disabled = true;
+      out.replaceChildren(h("span", { class: "spinner" }), " Asking the AI…");
+      try {
+        const sisters = r.recommendations.filter((x) => x.component === hsp.component).flatMap((x) => x.sisters.map((s) => `${shortName(s.name)} (−${pct(s.reduction)} vs ${x.material})`));
+        const res = await api("/ebom/ideas", { component: hsp.component, materials: comp.materials || [], share: hsp.share,
+          impact_kg_co2eq: hsp.impact, recyclability: lines.find((l) => l.recyclability)?.recyclability || null,
+          lower_impact_alternatives: sisters, provider: $("#e-provider").value });
+        if (res.status !== "ok") throw new Error(`${res.status}: ${res.error || ""}`);
+        out.replaceChildren(h("div", { class: "explain ai" },
+          h("div", { class: "label" }, `AI-written · ${res.provider} ${res.model || ""}`),
+          h("ul", { class: "advice" }, res.ideas.map((i) => h("li", {}, h("b", {}, `${i.type}: `), i.idea, h("div", { class: "sub" }, i.rationale)))),
+          h("div", { class: "hint" }, res.label)));
+      } catch (err) {
+        out.replaceChildren(h("span", { class: "calc-out err" }, err.message));
+      } finally {
+        btn.disabled = false;
+      }
+    } }, "Ask AI for eco-design ideas");
+    return h("div", { class: "rec hotspot" },
+      h("div", { class: "rec-head" }, h("b", {}, hsp.component), h("span", { class: "hint" }, ` ${pct(hsp.share)} of GHG · ${hsp.material}`)),
+      btn, out);
+  }));
 }
 
 function recommendationsPanel(r) {
   return h("div", { class: "card" },
     h("h3", { class: "card-title" }, "Eco-design recommendations"),
+    hotspotIdeas(r),
     h("p", { class: "hint", style: "margin:0 0 10px" }, "Sister materials are lower-impact records of the same material family and unit in the database. "
       + "Cost: the LCA exports carry no cost data, so trade-offs show impact only" + (r.columns.cost ? "; your file's cost column is shown for the current item." : ".")),
     h("div", { class: "recs" }, r.recommendations.map((rec) => h("div", { class: "rec" + (rec.hotspot ? " hotspot" : "") },
@@ -454,7 +528,15 @@ function sortBy(key) {
 
 function lineNotes(l) {
   const notes = [];
-  if (l.converted_from) notes.push(`Converted ${l.converted_from.quantity} ${l.converted_from.unit} to ${fmt(l.quantity)} kg.`);
+  if (l.composition) {
+    const c = l.composition;
+    const how = { ranked: "split by listed order (assumption)", equal: "equal split (assumption)", ai: "AI-estimated composition (provisional)" }[c.mode];
+    notes.push(`Mass: ${pct(c.fraction, 1)} of the component's ${c.of} ${c.unit || ""} listed as "${c.cell}" — ${how}.`);
+    for (const a of c.assumptions || []) notes.push(`Composition assumption: ${a}`);
+  }
+  if (l.reference) notes.push(`Electricity grid: ${l.reference.name}, ${l.reference.g_co2_per_kwh} g CO₂-eq/kWh — external reference value from ${l.reference.source}.`);
+  else if (l.grid) notes.push(`Electricity grid: ${l.grid} from the database (European grids only).`);
+  if (l.converted_from) notes.push(`Converted ${l.converted_from.quantity} ${l.converted_from.unit} to ${fmt(l.quantity)} ${l.unit}.`);
   if (l.unit_source === "default") notes.push(`Unit ${l.unit} taken from your default, not the file.`);
   for (const w of l.warnings) notes.push("⚠ " + w.message);
   if (l.status === "proxy") {
@@ -496,7 +578,7 @@ function drawRows() {
     return h("tr", { class: l.hotspot ? "hot-row" : "" },
       h("td", { class: "num" }, l.rank ?? "—"),
       h("td", {}, l.item_id),
-      h("td", {}, l.component),
+      h("td", {}, l.component, l.recyclability ? h("div", { class: "sub" }, `♻ ${l.recyclability}`) : null),
       h("td", {}, l.material || "(empty)", l.original_material ? h("div", { class: "sub" }, `was ${l.original_material}`) : null),
       h("td", { class: "num" }, l.quantity != null ? `${fmt(l.quantity)} ${l.unit || "?"}` : (l.quantity_raw || "—")),
       h("td", {}, h("span", { class: "status " + l.status }, STATUS_LABEL[l.status]),

@@ -73,8 +73,10 @@
           <div id="ebom-filename" class="drop-file"></div>
         </div>
         <div class="examples">
-          <button type="button" class="chip" id="ebom-sample">Use sample eBOM</button>
-          <a class="chip" href="/sample_ebom.csv" download>Download sample CSV</a>
+          <button type="button" class="chip" id="ebom-iphone">Use iPhone 16e eBOM</button>
+          <a class="chip" href="/sample_iphone16e_bom.csv" download="iPhone_16e_BoM.csv">Download iPhone 16e CSV</a>
+          <button type="button" class="chip" id="ebom-sample">Use bottle sample</button>
+          <a class="chip" href="/sample_ebom.csv" download>Download bottle sample</a>
         </div>
         <div class="grid filters">
           <label>Indicator<select id="e-indicator"></select></label>
@@ -86,8 +88,13 @@
           <label>Scoring references<select id="e-scoring">
             <option value="data">From the data (recommended)</option>
             <option value="upstream">Upstream constants (reproduce lca_backend)</option></select></label>
+          <label>Components with several materials<select id="e-split">
+            <option value="ranked">Split by listed order (first = main), labelled</option>
+            <option value="equal">Split equally, labelled (as in the AI4LCI notebook)</option>
+            <option value="ai">AI-estimated composition (needs AI fallback)</option></select></label>
+          <label>Electricity grid <span class="hint">for kWh lines</span><select id="e-grid"></select></label>
           <label class="check corr"><input type="checkbox" id="e-corr"> <span>Apply reviewed unit corrections
-            <span class="hint">cement and zinc ÷1000, labelled; see data/corrections.json</span></span></label>
+            <span class="hint">cement and zinc ÷1000, grid electricity per kWh; labelled; see data/corrections.json</span></span></label>
         </div>
         <div class="options">
           <label class="check"><input type="checkbox" id="e-ai"> AI fallback for uncovered lines <span class="hint">provisional, totalled separately</span></label>

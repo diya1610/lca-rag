@@ -4,7 +4,8 @@
 
 Web UI: GET /  (static files in web/)
 Endpoints: GET /health, GET /meta, GET /hierarchy[?parent=...], GET /record?id=...,
-           POST /query, POST /calculate, POST /ebom, POST /ebom/whatif, POST /ebom/clear-ai-cache
+           POST /query, POST /calculate, POST /ebom, POST /ebom/whatif, POST /ebom/clear-ai-cache,
+           POST /ebom/ideas
 """
 
 from __future__ import annotations
@@ -31,10 +32,11 @@ STATIC = {
     "/ebom.js": ("ebom.js", "text/javascript; charset=utf-8"),
     "/favicon.svg": ("favicon.svg", "image/svg+xml"),
     "/sample_ebom.csv": ("sample_ebom.csv", "text/csv; charset=utf-8"),
+    "/sample_iphone16e_bom.csv": ("sample_iphone16e_bom.csv", "text/csv; charset=utf-8"),
 }
 
 
-def make_handler(engine: rag.Engine, fallback=None, explainer=None):
+def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_generator=None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "LCARAG/1.0"
 
@@ -93,6 +95,11 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None):
                 "kinds": engine.distinct("kind"),
                 "stages": engine.distinct("stage"),
                 "units": engine.distinct("unit"),
+                "grids": [r[0] for r in engine._all(
+                    "SELECT DISTINCT location FROM records WHERE name LIKE 'Electricity Mix%' "
+                    "AND location IS NOT NULL ORDER BY location")],
+                "grid_references": [{"code": g["code"], "name": g["name"], "g_co2_per_kwh": g["g_co2_per_kwh"]}
+                                    for g in ebom.load_grid_references().values()],
                 "indicators": {s: engine.indicators(s) for s in rag.SOURCES},
                 "providers": ai_fallback.provider_status(),
                 "dense": engine.dense is not None,
@@ -127,7 +134,8 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None):
             if not self._host_ok():
                 return
             path = urlparse(self.path).path
-            if path not in ("/query", "/calculate", "/ebom", "/ebom/whatif", "/ebom/clear-ai-cache"):
+            if path not in ("/query", "/calculate", "/ebom", "/ebom/whatif", "/ebom/clear-ai-cache",
+                            "/ebom/ideas"):
                 self._send(404, {"error": "not_found"})
                 return
             body = self._body(MAX_EBOM_BYTES if path.startswith("/ebom") else MAX_BODY_BYTES)
@@ -135,6 +143,13 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None):
                 return
             if path == "/ebom/clear-ai-cache":
                 self._send(200, {"cleared": ebom.clear_ai_cache()})
+            elif path == "/ebom/ideas":
+                facts = {k: body.get(k) for k in ("component", "materials", "share", "impact_kg_co2eq",
+                                                  "recyclability", "lower_impact_alternatives")}
+                if not isinstance(facts["component"], str) or not facts["component"].strip():
+                    self._send(400, {"error": "bad_request", "message": "'component' is required."})
+                    return
+                self._send(200, ebom.eco_ideas(facts, body.get("provider"), ideas_generator))
             elif path.startswith("/ebom"):
                 if not isinstance(body.get("csv"), str):
                     self._send(400, {"error": "bad_request", "message": "'csv' text is required."})
@@ -145,7 +160,8 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None):
                             use_ai=bool(body.get("use_ai", False)), provider=body.get("provider"),
                             fallback=fallback, scoring=body.get("scoring") or "data",
                             grade_basis=body.get("grade_basis") or "combined",
-                            apply_corrections=bool(body.get("apply_corrections", False)))
+                            apply_corrections=bool(body.get("apply_corrections", False)),
+                            split_mode=body.get("split_mode") or "ranked", grid=body.get("grid") or "CN")
                 try:
                     if path == "/ebom":
                         out = ebom.analyse(*args, **opts)
@@ -186,8 +202,9 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None):
     return Handler
 
 
-def make_server(engine: rag.Engine, port: int = 8765, fallback=None, explainer=None) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((HOST, port), make_handler(engine, fallback, explainer))
+def make_server(engine: rag.Engine, port: int = 8765, fallback=None, explainer=None,
+                ideas_generator=None) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer((HOST, port), make_handler(engine, fallback, explainer, ideas_generator))
 
 
 def main() -> None:

@@ -60,6 +60,7 @@ AI_CACHE_SIZE = 1000
 _AI_CACHE: dict | None = None
 _AI_LOCK = threading.Lock()
 CORRECTIONS_PATH = rag.DATA_DIR / "corrections.json"
+GRID_REFERENCES_PATH = rag.DATA_DIR / "grid_references.json"
 UPSTREAM_REFS = {"Climate change": 12.5, "Human toxicity": 150.0, "Metal depletion": 1.5}
 SCORING_MODES = ("data", "upstream")
 GRADE_BASES = ("combined", "ghg")
@@ -123,8 +124,8 @@ TAG_FAMILY = {"polyethylene": "plastics", "plastic": "plastics"}
 # never used as a similar-material proxy.
 NON_MATERIAL_STAGES = {"End-of-Life", "Transport & Packaging"}
 
-MATERIAL_COLS = ["material_name", "material", "part_name", "part name", "name", "description",
-                 "item", "component"]
+MATERIAL_COLS = ["material_name", "material", "materials", "main material", "main materials",
+                 "part_name", "part name", "name", "description", "item", "component"]
 QUANTITY_COLS = ["quantity", "quantity_kg", "qty", "weight", "weight_kg", "mass", "mass_kg",
                  "amount"]
 UNIT_COLS = ["unit", "uom", "units"]
@@ -133,6 +134,13 @@ COMPONENT_COLS = ["component", "part", "assembly", "subassembly", "sub-assembly"
 ID_COLS = ["item_id", "part_no", "part no", "part number", "part_number", "id", "line"]
 COST_COLS = ["cost", "unit_cost", "price", "cost_usd", "cost_eur", "cost_inr"]
 LOCATION_COLS = ["location", "country", "supplier_country", "region"]
+ENERGY_TO_KWH = {"kwh": 1.0, "wh": 1e-3, "mwh": 1e3, "mj": 1 / 3.6, "gj": 1000 / 3.6}
+# Bare material words that name a whole family. A BOM line saying only "Glass" or "Steel"
+# gets the family's typical value rather than whichever specific record ranks first.
+GENERIC_MATERIALS = {"steel", "iron", "glass", "plastic", "plastics", "polymer", "paper", "wood",
+                     "copper", "aluminium", "aluminum", "zinc", "tin", "lead", "titanium",
+                     "concrete", "cement", "resin", "cardboard"}
+SPLIT_MODES = ("ranked", "equal", "ai")
 
 
 class EbomError(ValueError):
@@ -143,16 +151,50 @@ class EbomError(ValueError):
 # Parsing
 # ---------------------------------------------------------------------------
 
-def _pick(header_map: dict, candidates: list[str], exclude=()) -> str | None:
+def _norm_header(h: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"\(.*?\)", "", h).replace("_", " ")).strip().lower()
+
+
+def _header_unit(h: str) -> str | None:
+    """Unit written in a header: "Estimated Weight (g)", "weight_kg", "Electricity_Usage_kWh"."""
+    m = re.search(r"\(([^)]*)\)", h)
+    tokens = [m.group(1).strip().lower()] if m else []
+    tokens += [t.lower() for t in re.split(r"[\s_\-]+", h.strip())][-1:]
+    for t in tokens:
+        if t in MASS_TO_KG or t in ENERGY_TO_KWH:
+            return {"kwh": "kWh", "mj": "MJ", "wh": "Wh", "mwh": "MWh", "gj": "GJ"}.get(t, t)
+    return None
+
+
+def _pick(header_map: dict, candidates: list[str], exclude=(), contains=()) -> str | None:
     for cand in candidates:
-        col = header_map.get(cand)
+        col = header_map.get(_norm_header(cand))
         if col is not None and col not in exclude:
+            return col
+    for key, col in header_map.items():  # fuzzy: "Estimated Weight (g)" -> weight
+        if col not in exclude and any(w in key.split() for w in contains):
             return col
     return None
 
 
+def split_materials(cell: str) -> list[str]:
+    """Split "Li-ion (Li, Co, Ni, Graphite), Aluminum, Copper" on top-level commas/semicolons."""
+    parts, depth, cur = [], 0, ""
+    for ch in cell:
+        depth += ch in "([{"
+        depth -= ch in ")]}"
+        if ch in ",;" and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    return [p.strip() for p in parts if p.strip()]
+
+
 def parse_csv(text: str) -> tuple[list[dict], dict]:
-    """Return (lines, column mapping). Raises EbomError with a readable message."""
+    """Return (rows, column mapping). Each row may list several materials (when the material
+    header is plural, e.g. "Main Materials") and an electricity amount. Raises EbomError."""
     text = text.lstrip("﻿")
     if not text.strip():
         raise EbomError("The file is empty.")
@@ -162,9 +204,12 @@ def parse_csv(text: str) -> tuple[list[dict], dict]:
         dialect = csv.excel
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
     headers = [h for h in (reader.fieldnames or []) if h is not None]
-    header_map = {h.strip().lower(): h for h in headers}
-    mat = _pick(header_map, MATERIAL_COLS)
-    qty = _pick(header_map, QUANTITY_COLS)
+    header_map = {_norm_header(h): h for h in headers}
+    energy = next((h for k, h in header_map.items() if ("electricity" in k or "energy" in k)
+                   and (_header_unit(h) or "").lower() in ENERGY_TO_KWH), None)
+    mat = _pick(header_map, MATERIAL_COLS, exclude=(energy,), contains=("material", "materials"))
+    qty = _pick(header_map, QUANTITY_COLS, exclude=(energy,),
+                contains=("weight", "mass", "quantity", "qty", "amount"))
     if mat is None or qty is None:
         raise EbomError(f"Need a material column and a quantity column; found {headers}. "
                         "Name them e.g. 'material' and 'quantity' (plus 'unit').")
@@ -173,34 +218,88 @@ def parse_csv(text: str) -> tuple[list[dict], dict]:
     id_col = _pick(header_map, ID_COLS, exclude=(mat, comp_col))
     loc_col = _pick(header_map, LOCATION_COLS)
     cost_col = _pick(header_map, COST_COLS)
-    header_unit = "kg" if unit_col is None and qty.strip().lower().endswith("kg") else None
+    recy_col = next((h for k, h in header_map.items() if "recycl" in k), None)
+    header_unit = _header_unit(qty) if unit_col is None and (_header_unit(qty) or "").lower() in MASS_TO_KG else None
+    multi = _norm_header(mat).endswith("materials")
     columns = {"material": mat, "quantity": qty, "unit": unit_col, "component": comp_col,
-               "item_id": id_col, "location": loc_col, "cost": cost_col,
-               "unit_from_header": header_unit}
+               "item_id": id_col, "location": loc_col, "cost": cost_col, "recyclability": recy_col,
+               "energy": energy, "energy_unit": _header_unit(energy) if energy else None,
+               "unit_from_header": header_unit, "multi_material": multi}
 
     def cell(row, col):
         return (row.get(col) or "").strip() if col else ""
 
-    lines = []
+    rows = []
     for n, row in enumerate(reader, start=1):
         if not any((v or "").strip() for v in row.values() if isinstance(v, str)):
             continue  # blank row
-        if len(lines) >= MAX_LINES:
+        if len(rows) >= MAX_LINES:
             raise EbomError(f"Too many lines (max {MAX_LINES}).")
         material = cell(row, mat)
-        lines.append({
+        rows.append({
             "line": n,
-            "item_id": cell(row, id_col) or str(n),
+            "item_id": cell(row, id_col) or f"{n:02d}",
             "component": cell(row, comp_col) or material or f"line {n}",
-            "material": material,
+            "materials": split_materials(material) if multi else [material],
+            "material_cell": material,
             "quantity_raw": cell(row, qty),
             "unit": cell(row, unit_col) or header_unit,
             "location": cell(row, loc_col) or None,
             "cost": cell(row, cost_col) or None,
+            "recyclability": cell(row, recy_col) or None,
+            "energy_raw": cell(row, energy),
         })
-    if not lines:
+    if not rows:
         raise EbomError("No BOM lines found under the header row.")
-    return lines, columns
+    return rows, columns
+
+
+def _split_weights(n: int, mode: str) -> list[float]:
+    if mode == "equal":
+        return [1 / n] * n
+    w = [0.5 ** i for i in range(n)]  # "ranked": listed first = main material
+    return [x / sum(w) for x in w]
+
+
+def expand_rows(rows: list[dict], columns: dict, split_mode: str = "ranked",
+                composer=None) -> list[dict]:
+    """One line per material (component mass split across its listed materials) plus one
+    electricity line per component with an electricity amount. `composer(row)` may return
+    AI fractions {material: share}; otherwise the split is `split_mode` and labelled."""
+    lines = []
+    for row in rows:
+        mats = [m for m in row["materials"] if m] or [""]
+        qty, problem = _quantity(row["quantity_raw"])
+        fractions, how, notes = None, None, []
+        if len(mats) > 1 and qty is not None:
+            if composer:
+                answer = composer(row)
+                if answer and answer.get("status") == "ok":
+                    fractions, how, notes = [answer["fractions"][m] for m in mats], "ai", answer.get("assumptions", [])
+            if fractions is None:
+                how = "equal" if split_mode == "equal" else "ranked"
+                fractions = _split_weights(len(mats), how)
+        for k, mat in enumerate(mats, 1):
+            ln = {k2: row[k2] for k2 in ("line", "component", "location", "cost", "recyclability")}
+            ln["item_id"] = row["item_id"] if len(mats) == 1 else f"{row['item_id']}.{k}"
+            ln["material"] = mat
+            ln["unit"] = row["unit"]
+            ln["composition"] = None
+            if fractions:
+                ln["quantity_raw"] = repr(qty * fractions[k - 1])
+                ln["composition"] = {"mode": how, "fraction": fractions[k - 1], "of": row["quantity_raw"],
+                                     "unit": row["unit"], "cell": row["material_cell"], "assumptions": notes}
+            else:
+                ln["quantity_raw"] = row["quantity_raw"]
+            lines.append(ln)
+        if row.get("energy_raw"):
+            e, _ = _quantity(row["energy_raw"])
+            if e is not None:
+                lines.append({"line": row["line"], "component": row["component"], "location": row["location"],
+                              "cost": None, "recyclability": None, "item_id": f"{row['item_id']}.E",
+                              "material": "electricity", "quantity_raw": row["energy_raw"],
+                              "unit": columns["energy_unit"], "composition": None, "energy": True})
+    return lines
 
 
 def _quantity(raw: str):
@@ -235,8 +334,11 @@ def _unit_key(unit: str | None) -> str:
 def family_of(text: str) -> str | None:
     """Family of the head material: the last family keyword in the text
     ("glass fibre reinforced plastic" -> plastics, "stainless steel bracket" -> steel)."""
+    toks = rag.tokens(text)
+    if "oxide" in toks:  # aluminium oxide is a ceramic, not aluminium metal
+        return None
     found = None
-    for tok in rag.tokens(text):
+    for tok in toks:
         found = KEYWORD_FAMILY.get(tok, found)
     return found
 
@@ -276,9 +378,11 @@ class Catalog:
     """Records with indicators, their material family, plausibility, and scoring references."""
 
     def __init__(self, engine: rag.Engine, source: str | None, indicator: str,
-                 scoring: str = "data", corrections: dict | None = None):
+                 scoring: str = "data", corrections: dict | None = None, grid: str = "CN"):
         self.engine, self.source, self.indicator = engine, source, indicator
-        self.scoring, self.corrections = scoring, corrections or {}
+        self.scoring, self.corrections, self.grid = scoring, corrections or {}, grid
+        self.apply_relabels = corrections is not None
+        self.relabels = load_relabels()
         sql = ("SELECT id, name, unit, stage, location, raw_json, impacts_json FROM records "
                "WHERE impacts_json != '{}' AND unit IS NOT NULL")
         rows = engine._all(sql + (" AND source = ?" if source else ""), (source,) if source else ())
@@ -290,7 +394,9 @@ class Catalog:
                 impacts = {k: v / div for k, v in impacts.items()}
             tags = [t.strip().lower() for t in json.loads(r["raw_json"]).get("material_tags", "").split(",")]
             fam = next((TAG_FAMILY.get(t, t) for t in tags if TAG_FAMILY.get(t, t) in FAMILY_KEYWORDS), None)
+            relabel = self.relabel_for(r["name"], r["unit"])
             self.records.append({"id": r["id"], "name": r["name"], "unit": r["unit"], "stage": r["stage"],
+                                 "relabel": relabel,
                                  "location": r["location"], "impacts": impacts,
                                  "factor": impacts.get(indicator),
                                  # name fallback uses only the head before the first comma, so
@@ -313,6 +419,23 @@ class Catalog:
             if len(vals) >= 10:
                 self.refs[label] = vals[int(0.95 * (len(vals) - 1))]
 
+    def relabel_for(self, name: str, unit: str) -> dict | None:
+        for rl in self.relabels:
+            if unit == rl["unit"] and any(name.startswith(p) for p in rl["name_prefixes"]):
+                return rl
+        return None
+
+    def grid_record(self, location: str | None) -> tuple[dict | None, str | None]:
+        """A grid-mix record for `location` (else the default grid), preferring the
+        medium-voltage consumption mix that supplies manufacturing."""
+        grids = [r for r in self.records if r["relabel"] and r["name"].startswith("Electricity Mix")]
+        for loc in [location, self.grid] if location else [self.grid]:
+            pool = [r for r in grids if r["location"] == loc]
+            if pool:
+                pool.sort(key=lambda r: ("1kV - 60kV" not in r["name"], r["name"]))
+                return pool[0], loc
+        return None, None
+
     def implausible(self, factor: float, unit: str, label: str | None = None) -> float | None:
         """Return the ratio to the median when the factor is implausibly large."""
         median = self.median.get((unit, label or self.indicator))
@@ -324,16 +447,17 @@ class Catalog:
         if family is None:
             return []
         return [r for r in self.records
-                if r["family"] == family and r["unit"] == unit and r["factor"] is not None
+                if r["family"] == family and not r["relabel"] and r["unit"] == unit and r["factor"] is not None
                 and r["factor"] > 0 and r["stage"] not in NON_MATERIAL_STAGES
                 and r["id"] not in exclude and not self.implausible(r["factor"], unit)]
 
-    def proxy(self, material: str, unit: str, family: str | None, exclude: str | None = None):
+    def proxy(self, material: str, unit: str, family: str | None, exclude: str | None = None,
+              generic: bool = False):
         pool = self.family_pool(family, unit, exclude=(exclude,))
         if not pool:
             return None
         pool_ids = {r["id"] for r in pool}
-        hits = self.engine.search(material, {"source": self.source, "unit": unit}, top_k=50)["candidates"]
+        hits = [] if generic else self.engine.search(material, {"source": self.source, "unit": unit}, top_k=50)["candidates"]
         chosen, kind = None, "family typical"
         for c in hits:
             if c["id"] in pool_ids and c["term_coverage"] >= 0.5:
@@ -371,6 +495,19 @@ def load_corrections() -> dict:
     return {c["record_id"]: c for c in data["corrections"]}
 
 
+def load_grid_references() -> dict:
+    data = json.loads(GRID_REFERENCES_PATH.read_text(encoding="utf-8"))
+    return {g["code"]: {**g, "source": data["source"], "url": data["url"]} for g in data["grids"]}
+
+
+def load_relabels() -> list[dict]:
+    return json.loads(CORRECTIONS_PATH.read_text(encoding="utf-8")).get("unit_relabels", [])
+
+
+def is_electricity(material: str) -> bool:
+    return "electricity" in rag.tokens(material) or "electric power" in material.lower()
+
+
 def _ai_cache() -> dict:
     global _AI_CACHE
     if _AI_CACHE is None:
@@ -401,15 +538,20 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
             source: str | None = "bottles_processes", default_unit: str | None = None,
             use_ai: bool = False, provider: str | None = None, fallback=None,
             overrides: dict | None = None, memo: dict | None = None,
-            scoring: str = "data", grade_basis: str = "combined", apply_corrections: bool = False) -> dict:
+            scoring: str = "data", grade_basis: str = "combined", apply_corrections: bool = False,
+            split_mode: str = "ranked", grid: str = "CN", composer=None) -> dict:
     """`overrides` maps item_id -> replacement material (what-if). `memo` caches line
     resolutions and AI answers across calls in one request. `scoring` picks data-derived or
     upstream reference values, `grade_basis` grades on the combined or GHG-only score, and
     `apply_corrections` applies the reviewed scale corrections in data/corrections.json."""
-    if scoring not in SCORING_MODES or grade_basis not in GRADE_BASES:
-        raise EbomError(f"scoring must be one of {SCORING_MODES}; grade_basis one of {GRADE_BASES}.")
-    lines, columns = parse_csv(text)
+    if scoring not in SCORING_MODES or grade_basis not in GRADE_BASES or split_mode not in SPLIT_MODES:
+        raise EbomError(f"scoring must be one of {SCORING_MODES}; grade_basis one of {GRADE_BASES}; "
+                        f"split_mode one of {SPLIT_MODES}.")
+    rows, columns = parse_csv(text)
     memo = {} if memo is None else memo
+    if split_mode == "ai" and use_ai:
+        composer = composer or _ai_composer(provider)
+    lines = expand_rows(rows, columns, "ranked" if split_mode == "ai" else split_mode, composer)
     if overrides:
         known = {ln["item_id"] for ln in lines}
         unknown = sorted(set(overrides) - known)
@@ -419,20 +561,20 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
             if ln["item_id"] in overrides:
                 ln["original_material"] = ln["material"]
                 ln["material"] = overrides[ln["item_id"]].strip()
-    ckey = ("catalog", source, indicator, scoring, apply_corrections)
+    ckey = ("catalog", source, indicator, scoring, apply_corrections, grid)
     catalog = memo.get(ckey) or Catalog(engine, source, indicator, scoring,
-                                        load_corrections() if apply_corrections else None)
+                                        load_corrections() if apply_corrections else None, grid)
     memo[ckey] = catalog
     climate = is_climate(indicator)
 
     results = []
     for ln in lines:
         key = ("line", ln["material"], ln["quantity_raw"], ln["unit"], default_unit, indicator, source,
-               apply_corrections)
+               apply_corrections, grid, ln["location"])
         if key not in memo:
             memo[key] = _resolve_line(engine, catalog, ln, indicator, source, default_unit)
         identity = ("line", "item_id", "component", "material", "quantity_raw", "location", "cost",
-                    "original_material")
+                    "original_material", "composition", "recyclability")
         results.append({**memo[key], **{k: ln[k] for k in identity if k in ln}})
 
     pending = [r for r in results if r["status"] == "not_covered"]
@@ -464,15 +606,31 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
                 r.update(status="provisional", tier="provisional",
                          impact=r["provisional"]["impact_kg"] if climate else None)
 
+        # one request per unique material, then apply the answer to every line using it
+        groups: dict = {}
+        for r in pending:
+            groups.setdefault((r["material"].lower(), r["unit"]), []).append(r)
+        firsts = [g[0] for g in groups.values()]
         with ThreadPoolExecutor(max_workers=AI_WORKERS) as pool:
-            list(pool.map(run, pending[:MAX_AI_LINES]))
-        for r in pending[MAX_AI_LINES:]:
-            r["provisional"] = {"status": "skipped", "error": f"AI limited to {MAX_AI_LINES} lines"}
+            list(pool.map(run, firsts[:MAX_AI_LINES]))
+        for g in groups.values():
+            for r in g[1:]:
+                run(r)  # served from the cache filled above
+        for r in [g[0] for g in list(groups.values())[MAX_AI_LINES:]]:
+            r["provisional"] = {"status": "skipped", "error": f"AI limited to {MAX_AI_LINES} materials"}
     for r in results:
         r.pop("_context", None)
 
     _score_lines(results, catalog, climate, grade_basis)
-    product = _product(results, climate, grade_basis)
+    components = _aggregate(results, "component", climate, grade_basis)
+    # A hotspot is a BOM row (component) above the share threshold; its lines inherit the flag.
+    hot = {c["name"] for c in components if c["hotspot"]}
+    for r in results:
+        r["hotspot"] = r["component"] in hot
+    product = _product(results, climate, grade_basis, scoring, catalog.refs)
+    product["hotspots"] = [{"item_id": ", ".join(c["items"]), "component": c["name"],
+                            "material": ", ".join(c["materials"]), "impact": c["impact"], "share": c["share"]}
+                           for c in components if c["hotspot"]]
     recs = _recommendations(results, catalog) if climate else []
     return {
         "indicator": indicator,
@@ -481,9 +639,11 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
         "climate": climate,
         "columns": columns,
         "product": product,
-        "components": _aggregate(results, "component", climate, grade_basis),
+        "components": components,
         "materials": _aggregate(results, "material_key", climate, grade_basis),
-        "options": {"scoring": scoring, "grade_basis": grade_basis, "apply_corrections": apply_corrections},
+        "options": {"scoring": scoring, "grade_basis": grade_basis, "apply_corrections": apply_corrections,
+                    "split_mode": split_mode if split_mode != "ai" or use_ai else "ranked", "grid": grid},
+        "relabels": load_relabels() if apply_corrections else [],
         "corrections": list(catalog.corrections.values()),
         "lines": results,
         "recommendations": recs,
@@ -503,6 +663,44 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
                 "same family in the database; provisional values are AI estimates. Each "
                 "number keeps its tier. Scores combine the tiers and report their shares.",
     }
+
+
+def _ai_composer(provider):
+    """Wrap ai_fallback.composition with the persistent AI cache."""
+    import ai_fallback
+
+    def compose(row):
+        key = ("composition", row["component"], tuple(row["materials"]), row["quantity_raw"], provider)
+        with _AI_LOCK:
+            answer = _ai_cache().get(key)
+        if answer is None:
+            answer = ai_fallback.composition(row["component"], row["materials"], row["quantity_raw"],
+                                             row["unit"], provider=provider)
+            if answer.get("status") == "ok":
+                with _AI_LOCK:
+                    _ai_cache()[key] = answer
+                    _save_ai_cache()
+        return answer
+    return compose
+
+
+def eco_ideas(facts: dict, provider: str | None = None, generator=None) -> dict:
+    """AI eco-design ideas for one component, cached like other AI answers."""
+    if generator is None:
+        import ai_fallback
+        generator = ai_fallback.ideas
+    key = ("ideas", facts.get("component"), tuple(facts.get("materials") or ()), provider)
+    with _AI_LOCK:
+        cached = _ai_cache().get(key)
+    if cached is not None:
+        return cached
+    answer = generator(facts, provider=provider)
+    if answer.get("status") == "ok":
+        answer["label"] = "AI-written suggestions; check feasibility with engineering and LCA data."
+        with _AI_LOCK:
+            _ai_cache()[key] = answer
+            _save_ai_cache()
+    return answer
 
 
 def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, default_unit) -> dict:
@@ -525,7 +723,15 @@ def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, de
             res["converted_from"] = {"quantity": qty, "unit": unit_in}
         qty, res["quantity"], res["unit"] = qty * to_kg, qty * to_kg, "kg"
         res["mass_kg"] = qty
+    if is_electricity(ln["material"]) and unit_in.lower() in ENERGY_TO_KWH:
+        return _resolve_electricity(engine, catalog, ln, res, qty * ENERGY_TO_KWH[unit_in.lower()], unit_in, qty, indicator)
+    if unit_in.lower() in ENERGY_TO_KWH and unit_in != "MJ":  # e.g. steam given in kWh
+        res["converted_from"] = {"quantity": qty, "unit": unit_in}
+        qty = qty * ENERGY_TO_KWH[unit_in.lower()] * 3.6
+        res["quantity"], res["unit"] = qty, "MJ"
     unit = res["unit"]
+    material_l = ln["material"].lower()
+    generic = rag.normalize_name(ln["material"]) in GENERIC_MATERIALS
 
     out = engine.query(ln["material"], {"source": source, "unit": unit}, indicator, top_k=4)
     cands = out["candidates"]
@@ -537,7 +743,16 @@ def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, de
     res["reasons"] = list(out["reasons"])
 
     exact_id = None
-    if out["status"] == "ok" and out["answer"]:
+    top = cands[0] if cands else None
+    eol_words = ("landfill", "incineration", "recycling", "disposal", "transport", "waste")
+    if top and out["status"] == "ok" and (top["stage"] in NON_MATERIAL_STAGES
+                                          and not any(w in material_l for w in eol_words)):
+        res["reasons"] = ["exact_match_not_a_material"]  # e.g. "Landfill of glass" for "glass"
+    elif top and out["status"] == "ok" and catalog.relabel_for(top["name"], top["reference_unit"] or ""):
+        res["reasons"] = ["unit_label_unreliable"]
+    elif generic and out["status"] == "ok":
+        res["reasons"] = ["generic_material"]  # "Glass" alone: use the family's typical value
+    elif out["status"] == "ok" and out["answer"]:
         exact_id = out["answer"]["record_id"]
         factor = out["answer"]["value"]
         correction = catalog.corrections.get(exact_id)
@@ -560,7 +775,7 @@ def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, de
         res["reasons"] = ["exact_factor_implausible"]
 
     family = res["family"] or (catalog.by_id.get(exact_id) or {}).get("family")
-    proxy = catalog.proxy(ln["material"], unit, family, exclude=exact_id)
+    proxy = catalog.proxy(ln["material"], unit, family, exclude=exact_id, generic=generic)
     if proxy:
         contribution = proxy["factor"] * qty
         return {**res, "status": "proxy", "tier": "proxy", "family": family, "proxy": proxy,
@@ -570,6 +785,50 @@ def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, de
     if family:
         res["reasons"].append("no_plausible_family_member")
     return {**res, "status": "not_covered", "family": family}
+
+
+def _resolve_electricity(engine, catalog: Catalog, ln: dict, res: dict, kwh: float, unit_in: str,
+                         qty_in: float, indicator: str) -> dict:
+    """Electricity is matched to a grid mix per kWh. The export labels grid mixes "MJ" but
+    their values are per kWh (see data/corrections.json), so they are used only when the
+    reviewed corrections are on."""
+    if unit_in != "kWh":
+        res["converted_from"] = {"quantity": qty_in, "unit": unit_in}
+    res.update(quantity=kwh, unit="kWh", family=None)
+    refs = load_grid_references()
+    code = ln.get("location") if ln.get("location") in refs else (catalog.grid if catalog.grid in refs else None)
+    if code and is_climate(indicator):
+        g = refs[code]
+        factor = g["g_co2_per_kwh"] / 1000.0
+        res["match"] = {"id": f"reference:{code}", "name": g["name"], "location": code,
+                        "citation": f"{g['source']} ({g['url']})", "term_coverage": 1.0}
+        res["warnings"].append({"code": "reference_grid", "message":
+                                f"{g['name']}: {g['g_co2_per_kwh']} g CO2-eq/kWh, an external reference value "
+                                "(not in the LCA database)."})
+        return {**res, "status": "reference", "tier": "reference", "grid": code, "factor": factor,
+                "reference": {"code": code, **g}, "contribution": factor * kwh, "impact": factor * kwh}
+    record, loc = catalog.grid_record(ln.get("location"))
+    if record is None:
+        return {**res, "status": "not_covered", "reasons": ["no_grid_mix"]}
+    res["match"] = {"id": record["id"], "name": record["name"], "location": record["location"],
+                    "citation": engine.record(record["id"])["citation"], "term_coverage": 1.0}
+    if not catalog.apply_relabels:
+        res["_context"] = [{"id": record["id"], "name": record["name"], "location": record["location"],
+                            "reference_unit": "kWh (labelled MJ in source)"}]
+        return {**res, "status": "not_covered", "reasons": ["unit_label_unreliable"]}
+    factor = record["impacts"].get(indicator)
+    if factor is None:
+        return {**res, "status": "not_covered", "reasons": ["missing_indicator"]}
+    rl = record["relabel"]
+    res["warnings"].append({"code": "corrected_factor", "record_id": record["id"],
+                            "message": f"Grid mix {record['location']} used per kWh although the source labels it "
+                                       f"per MJ (reviewed correction): {rl['reason']}"})
+    if ln.get("location") and loc != ln["location"]:
+        res["warnings"].append({"code": "grid_substituted", "message":
+                                f"No grid mix for {ln['location']} in the database; used {loc}."})
+    return {**res, "status": "evidence", "tier": "evidence", "record_id": record["id"], "factor": factor,
+            "correction": {"divide_by": 1, "reason": rl["reason"], "relabel": f"{rl['unit']} -> {rl['actual_unit']}"},
+            "grid": loc, "contribution": factor * kwh, "impact": factor * kwh}
 
 
 def _provisional(fb: dict, qty: float, climate: bool) -> dict:
@@ -605,6 +864,8 @@ def _confidence(r: dict) -> str | None:
     if r["status"] == "evidence":
         return "high" if (r["match"] or {}).get("term_coverage", 0) >= 1.0 else "medium"
     if r["status"] == "proxy" and r["proxy"]["kind"] == "similar record":
+        return "medium"
+    if r["status"] == "reference":
         return "medium"
     return "low"
 
@@ -652,7 +913,7 @@ def _score_lines(results: list[dict], catalog: Catalog, climate: bool, grade_bas
 
 
 def _tiers(rows) -> dict:
-    t = {"evidence": 0.0, "proxy": 0.0, "provisional": 0.0}
+    t = {"evidence": 0.0, "proxy": 0.0, "reference": 0.0, "provisional": 0.0}
     for r in rows:
         if r["impact"] is not None:
             t[r["tier"]] += r["impact"]
@@ -704,18 +965,49 @@ def _aggregate(results: list[dict], key: str, climate: bool, grade_basis: str = 
     return sorted(out, key=lambda g: -(g["impact"] or 0))
 
 
-def _product(results: list[dict], climate: bool, grade_basis: str = "combined") -> dict:
+def _product_subscores(results: list[dict], refs: dict, total: float, product_mass: float) -> dict:
+    """Product-level sub-scores. GHG uses the product's own intensity (all GHG, energy
+    included, per kg of product mass) and total; criticality and toxicity are mass-weighted
+    over material lines. Weighting item scores by GHG (upstream) lets energy lines, which have
+    no material sub-scores and tiny absolute scores, pull the product score towards zero."""
+    out = {}
+    ref = refs.get("Climate change")
+    if product_mass and ref and total is not None:
+        out["ghg"] = (GHG_BLEND["intensity"] * _clip(total / product_mass / ref * 100)
+                      + GHG_BLEND["absolute"] * _clip(total / ABS_GHG_REF_KG * 100))
+    else:
+        out["ghg"] = None
+    for key in ("criticality", "toxicity"):
+        pairs = [(r["mass_kg"], r["scores"][key]) for r in results
+                 if r["mass_kg"] and r["scores"] and r["scores"].get(key) is not None]
+        w = sum(m for m, _ in pairs)
+        out[key] = sum(m * v for m, v in pairs) / w if w else None
+    return {k: out[k] for k in WEIGHTS}
+
+
+def _product(results: list[dict], climate: bool, grade_basis: str = "combined",
+             product_scoring: str = "data", refs: dict | None = None) -> dict:
     tiers = _tiers(results)
     total = sum(tiers.values())
     scored = [r for r in results if r["impact"] is not None]
     mass_total = sum(r["mass_kg"] for r in results if r["mass_kg"])
     mass_covered = sum(r["mass_kg"] for r in scored if r["mass_kg"])
     mass_cov = mass_covered / mass_total if mass_total else None
-    combined = _weighted(results, "composite")
-    ghg_only = _weighted(results, "ghg")
+    if not climate:
+        subscores = {k: None for k in WEIGHTS}
+        combined = ghg_only = None
+    elif product_scoring == "upstream":
+        subscores = {k: _weighted(results, k) for k in WEIGHTS}
+        combined = _weighted(results, "composite")
+        ghg_only = subscores["ghg"]
+    else:
+        subscores = _product_subscores(results, refs or {}, total, mass_total)
+        avail = {k: v for k, v in subscores.items() if v is not None}
+        combined = (sum(WEIGHTS[k] * v for k, v in avail.items()) / sum(WEIGHTS[k] for k in avail)) if avail else None
+        ghg_only = subscores["ghg"]
     score = combined if grade_basis == "combined" else ghg_only
     counts = {s: sum(r["status"] == s for r in results)
-              for s in ("evidence", "proxy", "provisional", "not_covered", "invalid")}
+              for s in ("evidence", "proxy", "reference", "provisional", "not_covered", "invalid")}
     conf = {c: sum(r["confidence"] == c for r in scored) for c in ("high", "medium", "low")}
     ev_share = tiers["evidence"] / total if total else 0.0
     if ev_share >= 0.8 and (mass_cov or 0) >= 0.9:
@@ -724,7 +1016,8 @@ def _product(results: list[dict], climate: bool, grade_basis: str = "combined") 
         confidence = "medium"
     else:
         confidence = "low"
-    hotspots = sorted((r for r in results if r["hotspot"]), key=lambda r: -r["impact"])
+    hotspots = sorted((r for r in results if r["hotspot"] and r["impact"] is not None),
+                      key=lambda r: -r["impact"])
     return {
         "lines": len(results),
         "counts": counts,
@@ -735,14 +1028,16 @@ def _product(results: list[dict], climate: bool, grade_basis: str = "combined") 
         "mass_total_kg": mass_total or None,
         "mass_covered_kg": mass_covered or None,
         "mass_coverage": mass_cov,
-        "intensity": total / mass_covered if climate and mass_covered else None,
+        # per kg of the whole product; uncovered lines lower confidence, not the denominator
+        "intensity": total / mass_total if climate and mass_total else None,
         "score": score,
         "grade": grade_for(score),
         "grade_text": GRADE_TEXT.get(grade_for(score)),
         "grade_basis": grade_basis,
         "combined_score": combined, "combined_grade": grade_for(combined),
         "ghg_score": ghg_only, "ghg_grade": grade_for(ghg_only),
-        "subscores": {k: _weighted(results, k) for k in WEIGHTS},
+        "subscores": subscores,
+        "product_scoring": product_scoring,
         "hotspots": [{"item_id": r["item_id"], "component": r["component"], "material": r["material"],
                       "impact": r["impact"], "share": r["share"]} for r in hotspots],
         "match_confidence": conf,
@@ -771,7 +1066,12 @@ def _recommendations(results: list[dict], catalog: Catalog) -> list[dict]:
         if r["status"] in ("proxy", "provisional"):
             advice.append("Value is not from an exact database record; confirm with supplier or primary data.")
         if r["hotspot"]:
-            advice.append(f"Carbon hotspot: {r['share'] * 100:.0f}% of product GHG; prioritise in redesign.")
+            advice.append(f"Part of a carbon hotspot ({r['component']}); prioritise in redesign.")
+        recy = (r.get("recyclability") or "").lower()
+        if "difficult" in recy or "not recyclable" in recy or "non-recyclable" in recy:
+            advice.append(f"Recyclability in your eBOM: '{r['recyclability']}'. Consider design for "
+                          "disassembly, material recovery or a take-back scheme.")
+            priority = True
         if not (priority or sisters) or not (sisters or advice):
             continue
         recs.append({"item_id": r["item_id"], "component": r["component"], "material": r["material"],
@@ -794,12 +1094,14 @@ def _summary(a: dict) -> dict:
 def what_if(engine: rag.Engine, text: str, scenarios: list[dict], indicator: str = "Climate change",
             source: str | None = "bottles_processes", default_unit: str | None = None,
             use_ai: bool = False, provider: str | None = None, fallback=None, explainer=None,
-            scoring: str = "data", grade_basis: str = "combined", apply_corrections: bool = False) -> dict:
+            scoring: str = "data", grade_basis: str = "combined", apply_corrections: bool = False,
+            split_mode: str = "ranked", grid: str = "CN", composer=None) -> dict:
     """Re-run the full pipeline for up to three scenarios of material swaps."""
     if not scenarios or len(scenarios) > MAX_SCENARIOS:
         raise EbomError(f"Give between 1 and {MAX_SCENARIOS} scenarios.")
     memo: dict = {}
-    opts = dict(scoring=scoring, grade_basis=grade_basis, apply_corrections=apply_corrections)
+    opts = dict(scoring=scoring, grade_basis=grade_basis, apply_corrections=apply_corrections,
+                split_mode=split_mode, grid=grid, composer=composer)
     base = analyse(engine, text, indicator, source, default_unit, use_ai, provider, fallback, memo=memo, **opts)
     base_lines = {l["item_id"]: l for l in base["lines"]}
     out = []

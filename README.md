@@ -43,7 +43,7 @@ your browser.
 python rag.py build            # ~6 s; atomic rebuild of index/lca_rag.sqlite
 python desktop.py              # Tkinter evidence client
 python server.py               # loopback API on http://127.0.0.1:8765
-python -m unittest discover -s tests -v    # 44 tests (the paper's 26 + Claude, web, eBOM)
+python -m unittest discover -s tests -v    # 51 tests (the paper's 26 + Claude, web, eBOM)
 python eval/evaluate.py        # 12-query development benchmark
 ```
 
@@ -109,7 +109,41 @@ described them as dataset 95th percentiles. The real 95th percentiles are 8.24, 
 from the data. Sub-scores a line cannot have (for example toxicity for an AI estimate) are
 left out, and the weights are re-normalised.
 
-**Options** (eBOM tab, or `analyse(..., scoring=, grade_basis=, apply_corrections=)`):
+**Multi-material eBOMs** (e.g. `web/sample_iphone16e_bom.csv`, the iPhone 16e teardown BoM
+also used in the AI4LCI Kaggle notebook):
+
+- A plural material header such as `Main Materials` is split on top-level commas, so
+  "Li-ion (Li, Co, Ni, Graphite), Aluminum, Copper" becomes three materials.
+- Mass units in headers (`Estimated Weight (g)`) are recognised.
+- Each component's mass is split across its materials using one of three modes, and the
+  split is always labelled:
+  - **by listed order** (default; the first-listed material is the main one);
+  - **equally** (as the notebook does);
+  - by an **AI-estimated composition**. This is validated: fractions of exactly the listed
+    materials, summing to 1, with assumptions.
+- An `Electricity_Usage_kWh` column becomes one electricity line per component.
+- A recyclability column is shown, and "difficult to recycle" adds advice.
+- Bare material names ("Glass", "Copper") use the family's typical value. Disposal and
+  transport processes are never used as a material's evidence.
+
+**Electricity.** The database's grid mixes are labelled per MJ, but their values are per kWh.
+Read per MJ, Germany would emit 2.3 kg CO₂ per kWh, more than any power plant. They are
+therefore used only with reviewed corrections on (see `data/corrections.json`). The database
+has only European grids, so `data/grid_references.json` adds labelled **reference values**
+for manufacturing regions: China 950 and US-California 400 g CO₂-eq/kWh, the notebook's
+fallback intensities. China is the default grid. Reference-value lines form their own basis,
+separate from database evidence.
+
+**AI eco-design ideas.** Each hotspot component has an "Ask AI for eco-design ideas" button.
+It returns material, energy and circularity suggestions. They are validated, labelled
+AI-written, and saved.
+
+**Caution on AI estimates.** Two calls for the same material can differ by orders of
+magnitude. In testing, gold came back once as 25,000 and once as 25 kg CO₂-eq/kg, an
+apparent tonne/kg slip. Saved answers keep views consistent, but they are still provisional:
+review the AI rows (each shows its range and explanation) before relying on a total.
+
+**Options** (eBOM tab, or `analyse(..., scoring=, grade_basis=, apply_corrections=, split_mode=, grid=)`):
 
 - *Grade by*: the combined score (default) or **GHG only**. Both grades are always shown.
 - *Scoring references*: from the data (default) or the **upstream constants**. Upstream mode
@@ -151,7 +185,7 @@ left out, and the weights are re-normalised.
 | `eval/` | Benchmark cases, paraphrase cases, `evaluate.py`, result JSON |
 | `ebom.py` | eBOM analysis: column detection, exact → similar material → AI resolution, upstream-style scoring and grades, hotspots, sister materials, what-if scenarios |
 | `web/` | Web interface served by `server.py` (no build step, no external assets) |
-| `tests/` | 44 functional tests (the paper's 26 plus Claude, web and eBOM): real index, real loopback HTTP server, mocked providers |
+| `tests/` | 51 functional tests (the paper's 26 plus Claude, web and eBOM): real index, real loopback HTTP server, mocked providers |
 
 ## How it maps to the paper
 
@@ -218,7 +252,7 @@ left out, and the weights are re-normalised.
 | Indexed records | 157,952 | 157,952 |
 | Hierarchy nodes | 410 | 410 |
 | Distinct bottle process names | 210 | 210 normalized (215 raw strings) |
-| Automated tests | 26/26 | 26/26 of the paper's tests (44/44 including the additions) |
+| Automated tests | 26/26 | 26/26 of the paper's tests (51/51 including the additions) |
 | Dev benchmark Hit@1 / Hit@5 / MRR@5 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
 | Mean retrieval latency | 98.4 ms (Windows) | ~10–100 ms, depending on machine load |
 
