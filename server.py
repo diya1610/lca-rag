@@ -4,7 +4,7 @@
 
 Web UI: GET /  (static files in web/)
 Endpoints: GET /health, GET /meta, GET /hierarchy[?parent=...], GET /record?id=...,
-           POST /query, POST /calculate, POST /ebom
+           POST /query, POST /calculate, POST /ebom, POST /ebom/whatif
 """
 
 from __future__ import annotations
@@ -28,12 +28,13 @@ STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/app.css": ("app.css", "text/css; charset=utf-8"),
+    "/ebom.js": ("ebom.js", "text/javascript; charset=utf-8"),
     "/favicon.svg": ("favicon.svg", "image/svg+xml"),
     "/sample_ebom.csv": ("sample_ebom.csv", "text/csv; charset=utf-8"),
 }
 
 
-def make_handler(engine: rag.Engine, fallback=None):
+def make_handler(engine: rag.Engine, fallback=None, explainer=None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "LCARAG/1.0"
 
@@ -126,20 +127,29 @@ def make_handler(engine: rag.Engine, fallback=None):
             if not self._host_ok():
                 return
             path = urlparse(self.path).path
-            if path not in ("/query", "/calculate", "/ebom"):
+            if path not in ("/query", "/calculate", "/ebom", "/ebom/whatif"):
                 self._send(404, {"error": "not_found"})
                 return
-            body = self._body(MAX_EBOM_BYTES if path == "/ebom" else MAX_BODY_BYTES)
+            body = self._body(MAX_EBOM_BYTES if path.startswith("/ebom") else MAX_BODY_BYTES)
             if body is None:
                 return
-            if path == "/ebom":
+            if path.startswith("/ebom"):
                 if not isinstance(body.get("csv"), str):
                     self._send(400, {"error": "bad_request", "message": "'csv' text is required."})
                     return
+                args = (engine, body["csv"])
+                opts = dict(indicator=body.get("indicator") or "Climate change",
+                            source=body.get("source") or None, default_unit=body.get("default_unit") or None,
+                            use_ai=bool(body.get("use_ai", False)), provider=body.get("provider"),
+                            fallback=fallback)
                 try:
-                    out = ebom.analyse(engine, body["csv"], body.get("indicator") or "Climate change",
-                                       body.get("source") or None, body.get("default_unit") or None,
-                                       bool(body.get("use_ai", False)), body.get("provider"), fallback)
+                    if path == "/ebom":
+                        out = ebom.analyse(*args, **opts)
+                    else:
+                        scenarios = body.get("scenarios")
+                        if not isinstance(scenarios, list):
+                            raise ebom.EbomError("'scenarios' must be a list.")
+                        out = ebom.what_if(*args, scenarios, **opts, explainer=explainer)
                 except ebom.EbomError as exc:
                     self._send(400, {"error": "invalid_ebom", "message": str(exc)})
                     return
@@ -172,8 +182,8 @@ def make_handler(engine: rag.Engine, fallback=None):
     return Handler
 
 
-def make_server(engine: rag.Engine, port: int = 8765, fallback=None) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((HOST, port), make_handler(engine, fallback))
+def make_server(engine: rag.Engine, port: int = 8765, fallback=None, explainer=None) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer((HOST, port), make_handler(engine, fallback, explainer))
 
 
 def main() -> None:

@@ -43,7 +43,7 @@ your browser.
 python rag.py build            # ~6 s; atomic rebuild of index/lca_rag.sqlite
 python desktop.py              # Tkinter evidence client
 python server.py               # loopback API on http://127.0.0.1:8765
-python -m unittest discover -s tests -v    # 35 tests (the paper's 26 + Claude, web, eBOM)
+python -m unittest discover -s tests -v    # 41 tests (the paper's 26 + Claude, web, eBOM)
 python eval/evaluate.py        # 12-query development benchmark
 ```
 
@@ -59,30 +59,69 @@ python rag.py calc bottles_processes:232 "Climate change" 2 kg
 python rag.py query "recycled carbon fibre composite" --indicator "Climate change" --ai --provider ollama
 ```
 
-## eBOM analysis
+## eBOM analysis dashboard
 
 Upload a bill-of-materials CSV in the **eBOM analysis** tab, or run `python ebom.py bom.csv`.
 `web/sample_ebom.csv` is an example. Columns are detected case-insensitively:
 
-- **material** (required);
-- **quantity** (required);
-- **unit**, strongly recommended. A header like `weight_kg` also counts as the unit.
-- optionally an item ID and a location.
+- material and quantity (required);
+- unit (strongly recommended); a header like `weight_kg` also counts as the unit;
+- optionally component or assembly, item ID, country and cost.
 
-Each line goes through the same pipeline as a single query. The line's unit is applied as an
-**exact filter before ranking**, so every match can be scaled directly. Then:
+**Resolution ladder.** Each line is resolved in this order, and its basis is shown
+everywhere:
 
-- **Status:** each line becomes *evidence* (source factor × quantity), *provisional AI*, *not
-  covered* or *invalid*.
-- **Totals stay separate.** The evidence and provisional totals are never added together,
-  and provisional estimates in different impact units are never summed with each other.
-- **Units are never assumed.** A line without a unit is skipped, unless you pick a default
-  unit explicitly. Quantities like `1,500` (1.5 or 1500?) are rejected as ambiguous.
-- **Implausible factors are flagged.** A factor more than 50× the median for its indicator
-  and unit is marked for review. For example, the export lists *corrugated board boxes* at
-  1159 per kg but *corrugated board sheets* at 0.71, which suggests some processes were
-  exported per tonne or per item while labelled "kg".
-- **Results download as CSV.**
+1. **Exact record:** a database match, using the same retrieval, abstention and unit rules
+   as a single query. The line's unit is an exact filter.
+2. **Similar material:** used when there is no exact match, or when the match's factor is
+   implausible. It is a record from the same material family (steel, plastics, paper,
+   glass, …; from the export's `material_tags`) with the same unit and a plausible factor.
+   It is either the closest lexical match in the family or the family's median.
+3. **AI estimate:** used when no plausible similar material exists and the AI fallback is
+   enabled. It is validated and labelled. AI answers are cached for the session, so every
+   view shows the same value.
+4. **Not covered** or **invalid** (no quantity, no unit, or an ambiguous quantity such as
+   `1,500`).
+
+**Units.** Mass units (g, mg, t, lb, oz) are converted to kg explicitly and reported. Other
+units are never converted or assumed. AI estimates in g, kg or t CO₂-eq are normalised
+before summing; any other impact unit is excluded.
+
+**Implausible source data.** Whole families in the export look recorded per tonne while
+labelled "kg": Climate change for cement is 903, zinc 3200, aluminium 2461–3229 and copper
+797–1323. A factor more than 50× the median for its unit is never used as evidence or as a
+similar-material proxy, and the affected line says why.
+
+**Scoring.** The scoring is reverse-engineered from `lca_backend/engine.py`:
+
+- **Criticality:** EU/US critical-raw-material keyword tiers (90/55/20, unknown 40), falling
+  back to the material family when no keyword matches.
+- **Toxicity:** 70% human toxicity + 30% metal depletion, per kg.
+- **GHG:** 40% intensity + 60% absolute (500 kg CO₂-eq item reference).
+- **Item score:** 30% criticality + 35% toxicity + 35% GHG, from 0 to 100 (higher is worse).
+- **Grades:** A ≤ 30, B ≤ 60, C ≤ 80, D above.
+- **Product score:** the GHG-weighted mean of the item scores.
+- **Hotspot:** an item above 20% of total GHG.
+
+Upstream hard-coded the per-kg references (GHG 12.5, toxicity 150, metal depletion 1.5) and
+described them as dataset 95th percentiles. The real 95th percentiles are 8.24, 0.44 and
+0.016, so upstream's toxicity score was always about 0. Here the references are computed
+from the data. Sub-scores a line cannot have (for example toxicity for an AI estimate) are
+left out, and the weights are re-normalised.
+
+**Dashboard contents:**
+
+- **KPI cards:** total GHG split by basis, overall score and grade, hotspots, and the share of
+  high-confidence matches.
+- **Charts:** a radar of the three sub-scores, GHG by component (stacked by basis), and a
+  Pareto chart per item with cumulative share.
+- **Eco-design recommendations:** lower-impact *sister materials* of the same family and
+  unit. Cost shows as n/a, because the LCA exports have no cost data.
+- **What-if simulator:** up to three scenarios of material swaps, each re-running the full
+  pipeline. Each shows the GHG change (kg and %), the grade change, and a short design note.
+  The note is AI-written and labelled when the AI is enabled, and rule-based otherwise.
+- **Tables:** a sortable, filterable item table (score, grade, confidence, hotspot, notes),
+  a material-wise table, and a CSV export.
 
 ## Layout
 
@@ -96,9 +135,9 @@ Each line goes through the same pipeline as a single query. The line's unit is a
 | `data/` | The four source CSVs plus `SOURCE.json` (repository and commit) |
 | `index/` | Built index, `provenance.json` (commit, SHA-256 per file, timestamp), `audit.json` |
 | `eval/` | Benchmark cases, paraphrase cases, `evaluate.py`, result JSON |
-| `ebom.py` | eBOM (bill of materials) analysis: column detection, per-line matching and calculation, separate evidence and provisional totals |
+| `ebom.py` | eBOM analysis: column detection, exact → similar material → AI resolution, upstream-style scoring and grades, hotspots, sister materials, what-if scenarios |
 | `web/` | Web interface served by `server.py` (no build step, no external assets) |
-| `tests/` | 35 functional tests (the paper's 26 plus Claude, web and eBOM): real index, real loopback HTTP server, mocked providers |
+| `tests/` | 41 functional tests (the paper's 26 plus Claude, web and eBOM): real index, real loopback HTTP server, mocked providers |
 
 ## How it maps to the paper
 
@@ -165,7 +204,7 @@ Each line goes through the same pipeline as a single query. The line's unit is a
 | Indexed records | 157,952 | 157,952 |
 | Hierarchy nodes | 410 | 410 |
 | Distinct bottle process names | 210 | 210 normalized (215 raw strings) |
-| Automated tests | 26/26 | 26/26 of the paper's tests (35/35 including the additions) |
+| Automated tests | 26/26 | 26/26 of the paper's tests (41/41 including the additions) |
 | Dev benchmark Hit@1 / Hit@5 / MRR@5 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
 | Mean retrieval latency | 98.4 ms (Windows) | ~10–100 ms, depending on machine load |
 
