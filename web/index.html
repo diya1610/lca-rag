@@ -47,7 +47,7 @@
         <div class="examples" id="examples"></div>
 
         <div class="grid filters">
-          <label>Source<select id="f-source"></select></label>
+          <label>Data<select id="f-source"></select></label>
           <label>Record kind<select id="f-kind"></select></label>
           <label>Lifecycle stage<select id="f-stage"></select></label>
           <label><span>Location <span class="hint">exact</span></span><input id="f-location" placeholder="e.g. RER, EU-27"></label>
@@ -65,7 +65,7 @@
 
       <div id="results" class="results" aria-live="polite">
         <div class="empty">
-          <p>Search the 157,952 indexed records. Results are ranked candidates with citations, not verified process selections.</p>
+          <p>Search the 157,952 indexed records. Results are ranked candidates, not verified process selections.</p>
         </div>
       </div>
     </section>
@@ -87,21 +87,20 @@
         </div>
         <div class="grid filters">
           <label>Indicator<select id="e-indicator"></select></label>
-          <label>Match against source<select id="e-source"></select></label>
           <label><span>Unit for lines without one <span class="hint">never assumed</span></span><select id="e-unit"></select></label>
           <label>Grade by<select id="e-basis">
             <option value="combined">Combined score (criticality, toxicity, GHG)</option>
             <option value="ghg">GHG only</option></select></label>
           <label>Scoring references<select id="e-scoring">
             <option value="data">From the data (recommended)</option>
-            <option value="upstream">Upstream constants (reproduce lca_backend)</option></select></label>
+            <option value="upstream">Original constants (for comparison)</option></select></label>
           <label>Components with several materials<select id="e-split">
             <option value="ranked">Split by listed order (first = main), labelled</option>
-            <option value="equal">Split equally, labelled (as in the AI4LCI notebook)</option>
+            <option value="equal">Split equally, labelled</option>
             <option value="ai">AI-estimated composition (needs AI fallback)</option></select></label>
           <label>Electricity grid <span class="hint">for kWh lines</span><select id="e-grid"></select></label>
           <label class="check corr"><input type="checkbox" id="e-corr"> <span>Apply reviewed unit corrections
-            <span class="hint">cement and zinc ÷1000, grid electricity per kWh; labelled; see data/corrections.json</span></span></label>
+            <span class="hint">cement and zinc ÷1000, grid electricity per kWh; labelled</span></span></label>
         </div>
         <div class="options">
           <label class="check"><input type="checkbox" id="e-ai"> AI fallback for uncovered lines <span class="hint">provisional, totalled separately</span></label>

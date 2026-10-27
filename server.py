@@ -103,6 +103,11 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
                 "grid_references": [{"code": g["code"], "name": g["name"], "g_co2_per_kwh": g["g_co2_per_kwh"]}
                                     for g in ebom.load_grid_references().values()],
                 "indicators": {s: engine.indicators(s) for s in rag.SOURCES},
+                # indicators that can be calculated in an eBOM (records with an explicit unit)
+                "ebom_indicators": list(dict.fromkeys(
+                    label for (src,) in engine._all("SELECT DISTINCT source FROM records WHERE unit IS NOT NULL "
+                                                    "AND impacts_json != '{}'")
+                    for label in engine.indicators(src))),
                 "providers": ai_fallback.provider_status(),
                 "dense": engine.dense is not None,
             }

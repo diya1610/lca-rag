@@ -398,7 +398,7 @@ class Catalog:
         self.scoring, self.corrections, self.grid = scoring, corrections or {}, grid
         self.apply_relabels = corrections is not None
         self.relabels = load_relabels()
-        sql = ("SELECT id, name, unit, stage, location, raw_json, impacts_json FROM records "
+        sql = ("SELECT id, name, unit, stage, location, kind, raw_json, impacts_json FROM records "
                "WHERE impacts_json != '{}' AND unit IS NOT NULL")
         rows = engine._all(sql + (" AND source = ?" if source else ""), (source,) if source else ())
         self.records, by_unit_label = [], {}
@@ -421,6 +421,10 @@ class Catalog:
                 if v:
                     by_unit_label.setdefault((r["unit"], label), []).append(abs(v))
         self.median = {k: sorted(v)[len(v) // 2] for k, v in by_unit_label.items() if len(v) >= 10}
+        # With all sources, only record kinds that carry this indicator and a unit can be
+        # evidence; flows (no indicators) must not outrank them.
+        kinds = {r["kind"] for r in rows if json.loads(r["impacts_json"]).get(indicator) is not None}
+        self.match_filters = {"source": source, "kind": next(iter(kinds)) if len(kinds) == 1 and not source else None}
         self.by_id = {r["id"]: r for r in self.records}
         # scoring references: 95th percentile of plausible positive per-kg factors
         self.refs = {}
@@ -472,7 +476,7 @@ class Catalog:
         if not pool:
             return None
         pool_ids = {r["id"] for r in pool}
-        hits = [] if generic else self.engine.search(material, {"source": self.source, "unit": unit}, top_k=50)["candidates"]
+        hits = [] if generic else self.engine.search(material, {**self.match_filters, "unit": unit}, top_k=50)["candidates"]
         chosen, kind = None, "family typical"
         for c in hits:
             if c["id"] in pool_ids and c["term_coverage"] >= 0.5:
@@ -550,7 +554,7 @@ def clear_ai_cache() -> int:
 
 
 def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
-            source: str | None = "bottles_processes", default_unit: str | None = None,
+            source: str | None = None, default_unit: str | None = None,
             use_ai: bool = False, provider: str | None = None, fallback=None,
             overrides: dict | None = None, memo: dict | None = None,
             scoring: str = "data", grade_basis: str = "combined", apply_corrections: bool = False,
@@ -668,10 +672,10 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
             "grade_bands": [{"grade": g, "max": b} for g, b in GRADE_BANDS] + [{"grade": "D", "max": None}],
             "hotspot_share": HOTSPOT_SHARE,
             "mode": scoring, "grade_basis": grade_basis,
-            "note": ("Formula and weights follow lca_backend/engine.py. Per-kg references are the "
-                     "95th percentile of plausible dataset factors (upstream's hard-coded values "
+            "note": ("Formula and weights follow the original scoring method. Per-kg references are the "
+                     "95th percentile of plausible dataset factors (the original hard-coded values "
                      "were 12.5 / 150 / 1.5 and left toxicity near zero).") if scoring == "data" else
-                    ("Upstream mode: lca_backend's hard-coded references 12.5 / 150 / 1.5 and keyword-only "
+                    ("Original constants: hard-coded references 12.5 / 150 / 1.5 and keyword-only "
                      "criticality, reproduced for comparison. With this data the toxicity sub-score is ~0."),
         },
         "note": "Evidence uses exact source records; proxies use a similar material from the "
@@ -748,7 +752,7 @@ def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, de
     material_l = ln["material"].lower()
     generic = rag.normalize_name(ln["material"]) in GENERIC_MATERIALS
 
-    out = engine.query(ln["material"], {"source": source, "unit": unit}, indicator, top_k=4)
+    out = engine.query(ln["material"], {**catalog.match_filters, "unit": unit}, indicator, top_k=4)
     cands = out["candidates"]
     res["_context"] = cands
     if cands:
@@ -784,7 +788,7 @@ def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, de
                     "correction": correction, "contribution": factor * qty, "impact": factor * qty}
         res["warnings"].append({
             "code": "implausible_factor", "record_id": exact_id, "factor": factor,
-            "message": f"The exact match {exact_id} has factor {factor:.4g}, {ratio:.0f}x the median "
+            "message": f"The exact match has factor {factor:.4g}, {ratio:.0f}x the median "
                        f"for {indicator} per {unit}; the source likely records it per tonne or per "
                        "item. It is not used."})
         res["reasons"] = ["exact_factor_implausible"]
@@ -1107,7 +1111,7 @@ def _summary(a: dict) -> dict:
 
 
 def what_if(engine: rag.Engine, text: str, scenarios: list[dict], indicator: str = "Climate change",
-            source: str | None = "bottles_processes", default_unit: str | None = None,
+            source: str | None = None, default_unit: str | None = None,
             use_ai: bool = False, provider: str | None = None, fallback=None, explainer=None,
             scoring: str = "data", grade_basis: str = "combined", apply_corrections: bool = False,
             split_mode: str = "ranked", grid: str = "CN", composer=None) -> dict:
@@ -1188,7 +1192,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Analyse an eBOM CSV against the LCA index.")
     parser.add_argument("csv_path")
     parser.add_argument("--indicator", default="Climate change")
-    parser.add_argument("--source", default="bottles_processes")
+    parser.add_argument("--source", default=None, help="limit matching to one source (default: all)")
     parser.add_argument("--default-unit")
     parser.add_argument("--ai", action="store_true")
     parser.add_argument("--provider", choices=["groq", "claude", "ollama"])

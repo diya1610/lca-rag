@@ -35,8 +35,7 @@ const gradeBadge = (g, big) => g
 // ---------------------------------------------------------------- setup
 
 function fillEbomIndicators() {
-  const src = $("#e-source").value;
-  const labels = src ? state.meta.indicators[src] : [...new Set(Object.values(state.meta.indicators).flat())];
+  const labels = state.meta.ebom_indicators;
   const sel = $("#e-indicator");
   const prev = sel.value || "Climate change";
   sel.replaceChildren(...labels.map((l) => option(l)));
@@ -45,11 +44,7 @@ function fillEbomIndicators() {
 
 function initEbom() {
   const m = state.meta;
-  $("#e-source").replaceChildren(...Object.keys(m.sources).filter((s) => m.indicators[s].length).map((s) => option(s)),
-    option("", "All sources with indicators"));
-  $("#e-source").value = "bottles_processes";
   fillEbomIndicators();
-  $("#e-source").addEventListener("change", fillEbomIndicators);
   $("#e-unit").replaceChildren(option("", "Don't assume (skip those lines)"), ...m.units.map((u) => option(u)));
   $("#e-grid").replaceChildren(
     h("optgroup", { label: "Reference values (not in the database)" },
@@ -115,7 +110,7 @@ function settings() {
   return {
     csv: eb.text,
     indicator: $("#e-indicator").value,
-    source: $("#e-source").value || null,
+    source: null,  // always match against all data
     default_unit: $("#e-unit").value || null,
     use_ai: $("#e-ai").checked,
     provider: $("#e-provider").value,
@@ -165,7 +160,7 @@ function renderEbom() {
       h("p", { style: "margin:4px 0 0" }, `The grade, hotspots and recommendations use the GHG indicator. "${r.indicator}" is shown per line only.`))));
   }
   if (r.options.scoring === "upstream") {
-    out.push(h("div", { class: "banner insufficient" }, h("div", {}, h("h3", {}, "Upstream scoring constants"),
+    out.push(h("div", { class: "banner insufficient" }, h("div", {}, h("h3", {}, "Original scoring constants"),
       h("p", { style: "margin:4px 0 0" }, r.scoring.note))));
   }
   const split = r.lines.filter((l) => l.composition);
@@ -183,7 +178,7 @@ function renderEbom() {
     out.push(h("div", { class: "banner insufficient" }, h("div", {},
       h("h3", {}, `Electricity uses a reference grid: ${g.name}`),
       h("p", { style: "margin:4px 0 0" }, `${g.g_co2_per_kwh} g CO₂-eq/kWh for ${refLines.length} electricity line${refLines.length === 1 ? "" : "s"}. `
-        + `The LCA database has only European grids, so this external value (${g.source}) is used and labelled "Reference value". Change it under "Electricity grid".`))));
+        + `The LCA database has only European grids, so this external value is used and labelled "Reference value". Change it under "Electricity grid".`))));
   }
   const elec = r.lines.filter((l) => l.material === "electricity");
   const elecOff = elec.filter((l) => l.reasons.includes("unit_label_unreliable") && l.status !== "provisional");
@@ -287,7 +282,7 @@ function radarCard(r) {
   return h("div", { class: "card" },
     h("h3", { class: "card-title" }, "Sub-scores (0–100, higher = worse)"),
     h("p", { class: "hint", style: "margin:0 0 6px" }, (r.product.product_scoring === "upstream"
-      ? "GHG-weighted across items, as in the upstream engine."
+      ? "GHG-weighted across items, as in the original scoring method."
       : "GHG from the product's total and intensity; criticality and toxicity mass-weighted over materials.")
       + " Composite = 30% criticality + 35% toxicity + 35% GHG."),
     svg);
@@ -541,7 +536,7 @@ function lineNotes(l) {
     notes.push(`Mass: ${pct(c.fraction, 1)} of the component's ${c.of} ${c.unit || ""} listed as "${c.cell}" — ${how}.`);
     for (const a of c.assumptions || []) notes.push(`Composition assumption: ${a}`);
   }
-  if (l.reference) notes.push(`Electricity grid: ${l.reference.name}, ${l.reference.g_co2_per_kwh} g CO₂-eq/kWh — external reference value from ${l.reference.source}.`);
+  if (l.reference) notes.push(`Electricity grid: ${l.reference.name}, ${l.reference.g_co2_per_kwh} g CO₂-eq/kWh — external reference value, not from the database.`);
   else if (l.grid) notes.push(`Electricity grid: ${l.grid} from the database (European grids only).`);
   if (l.converted_from) notes.push(`Converted ${l.converted_from.quantity} ${l.converted_from.unit} to ${fmt(l.quantity)} ${l.unit}.`);
   if (l.unit_source === "default") notes.push(`Unit ${l.unit} taken from your default, not the file.`);
@@ -580,7 +575,8 @@ function drawRows() {
   const num = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
   $("#items-body").replaceChildren(...rows.map((l) => {
     const rec = l.proxy || l.match;
-    const recCell = l.tier && rec ? h("button", { type: "button", class: "linkish", title: rec.name, onclick: () => openRecord(rec.id, r.indicator) }, shortName(rec.name)) : null;
+    const recCell = !(l.tier && rec) ? null : l.reference ? h("span", {}, shortName(rec.name))
+      : h("button", { type: "button", class: "linkish", title: rec.name, onclick: () => openRecord(rec.id, r.indicator) }, shortName(rec.name));
     const notes = lineNotes(l);
     return h("tr", { class: l.hotspot ? "hot-row" : "" },
       h("td", { class: "num" }, l.rank ?? "—"),
@@ -632,7 +628,7 @@ function methodology(r) {
     h("summary", {}, "How the analysis and grade are calculated"),
     h("ul", {},
       h("li", {}, "Each line is resolved in order: exact database record → similar material of the same family (same unit, plausible factor) → AI estimate (if enabled) → not covered."),
-      h("li", {}, `Item score = ${s.weights.criticality * 100}% criticality + ${s.weights.toxicity * 100}% toxicity + ${s.weights.ghg * 100}% GHG (0–100, higher = worse), following the upstream lca_backend engine. Sub-scores missing for a line (e.g. toxicity for AI estimates) are left out and the weights re-normalised.`),
+      h("li", {}, `Item score = ${s.weights.criticality * 100}% criticality + ${s.weights.toxicity * 100}% toxicity + ${s.weights.ghg * 100}% GHG (0–100, higher = worse), following the original scoring method. Sub-scores missing for a line (e.g. toxicity for AI estimates) are left out and the weights re-normalised.`),
       h("li", {}, `GHG sub-score = ${s.ghg_blend.intensity * 100}% intensity (vs ${fmt(s.references_p95_per_kg["Climate change"])} kg CO₂-eq/kg) + ${s.ghg_blend.absolute * 100}% absolute (vs ${s.abs_ghg_ref_kg} kg CO₂-eq per item).`),
       h("li", {}, `Toxicity = 70% human toxicity (vs ${fmt(s.references_p95_per_kg["Human toxicity"])}) + 30% metal depletion (vs ${fmt(s.references_p95_per_kg["Metal depletion"])}), per kg.`),
       h("li", {}, s.note),
@@ -650,7 +646,7 @@ function downloadCsv() {
     return /[",\n]/.test(t) ? `"${t.replaceAll('"', '""')}"` : t;
   };
   const rows = r.lines.map((l) => [l.rank, l.item_id, l.component, l.material, l.quantity, l.unit, l.status,
-    (l.proxy || l.match)?.id, l.factor, l.impact, l.share, l.scores?.criticality, l.scores?.toxicity, l.scores?.ghg,
+    (l.proxy || l.match)?.name, l.factor, l.impact, l.share, l.scores?.criticality, l.scores?.toxicity, l.scores?.ghg,
     l.scores?.composite, l.grade, l.confidence, l.hotspot, lineNotes(l).join(" | ")].map(esc).join(","));
   const blob = new Blob([[cols.join(","), ...rows].join("\n")], { type: "text/csv" });
   const a = h("a", { href: URL.createObjectURL(blob), download: `ebom_analysis_${(eb.name || "bom").replace(/\.\w+$/, "")}.csv` });

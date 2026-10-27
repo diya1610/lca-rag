@@ -122,6 +122,19 @@ const EXAMPLES = [
 
 const state = { meta: null };
 
+// Internal dataset names are never shown; these are the display names.
+const SOURCE_LABELS = {
+  bottles_processes: "Process records",
+  lca_full_rag_data_units: "Impact assessments",
+  openlca_flows: "Flow catalogue A",
+  usda_flows: "Flow catalogue B",
+};
+const sourceLabel = (s) => SOURCE_LABELS[s] || "Dataset";
+const prettyPath = (path, sep = " › ") => {
+  const parts = String(path || "").split(/\s*>\s*|\//);
+  return [sourceLabel(parts[0]), ...parts.slice(1)].join(sep);
+};
+
 // ---------------------------------------------------------------- setup
 
 function option(value, label) {
@@ -138,7 +151,7 @@ function fillIndicators() {
   const src = $("#f-source").value;
   const groups = Object.entries(state.meta.indicators).filter(([s, l]) => l.length && (!src || s === src));
   sel.replaceChildren(option("", "None (retrieve only)"),
-    ...groups.map(([s, labels]) => h("optgroup", { label: s }, labels.map((l) => option(l)))));
+    ...groups.map(([s, labels]) => h("optgroup", { label: sourceLabel(s) }, labels.map((l) => option(l)))));
   if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
 }
 
@@ -146,7 +159,7 @@ async function init() {
   const meta = await api("/meta");
   state.meta = meta;
 
-  fillSelect($("#f-source"), Object.keys(meta.sources), "All sources");
+  $("#f-source").replaceChildren(option("", "All data"), ...Object.keys(meta.sources).map((s) => option(s, sourceLabel(s))));
   fillSelect($("#f-kind"), meta.kinds, "Any kind");
   fillSelect($("#f-stage"), meta.stages, "Any stage");
   fillIndicators();
@@ -248,7 +261,7 @@ function renderResult(r) {
 
   if (r.route.length) {
     out.push(h("div", { class: "route" }, "Routed branches:",
-      r.route.slice(0, 5).map((n) => h("span", { class: "node", title: `${n.record_count} records` }, n.node_id.replaceAll("/", " › ")))));
+      r.route.slice(0, 5).map((n) => h("span", { class: "node", title: `${n.record_count} records` }, prettyPath(n.node_id)))));
   }
   if (r.answer) out.push(answerCard(r.answer));
   if (r.fallback) out.push(fallbackCard(r.fallback));
@@ -265,7 +278,6 @@ function answerCard(a) {
   return h("div", { class: "card answer" },
     h("div", { class: "label" }, "Source evidence"),
     h("div", { class: "bignum", "data-count": a.value }, fmt(a.value), " ", h("small", {}, `${a.indicator} per 1 ${a.per_reference_unit}`)),
-    h("div", { class: "cite" }, "Cited from ", h("span", { class: "mono" }, a.citation)),
     h("p", { class: "note", style: "padding:0;margin:8px 0 0" }, a.note),
     h("button", { type: "button", class: "ghost", style: "margin-top:10px", onclick: () => openRecord(a.record_id, a.indicator) },
       "Open record & calculate"));
@@ -279,7 +291,6 @@ function fallbackCard(fb) {
   const meta = h("dl", { class: "kv" },
     h("dt", {}, "Provider"), h("dd", {}, `${fb.provider}${fb.model ? " · " + fb.model : ""}`),
     h("dt", {}, "Generated"), h("dd", {}, fb.generated_at),
-    h("dt", {}, "Context records"), h("dd", { class: "mono" }, fb.context_record_ids.join(", ") || "none"),
     h("dt", {}, "Status"), h("dd", {}, fb.status));
 
   if (fb.status === "unavailable" || fb.status === "rejected") {
@@ -327,7 +338,7 @@ function candidateCard(c, rank, indicator) {
     h("div", { class: "rank" }, rank),
     h("div", {},
       h("h3", {}, c.name || "(unnamed)"),
-      h("div", { class: "path" }, c.hierarchy_path, " · ", h("span", { class: "mono" }, c.id)),
+      h("div", { class: "path" }, prettyPath(c.hierarchy_path)),
       h("div", { class: "tags" }, tags)),
     h("div", { class: "score" },
       `RRF ${c.scores.rrf.toFixed(4)}`, h("br"),
@@ -343,7 +354,7 @@ function closeDrawer() {
 }
 
 async function openRecord(id, indicator) {
-  $("#d-title").textContent = id;
+  $("#d-title").textContent = "Loading…";
   $("#d-body").replaceChildren(h("div", { class: "empty" }, h("span", { class: "spinner" })));
   $("#drawer").hidden = false;
   $("#scrim").hidden = false;
@@ -360,14 +371,10 @@ async function openRecord(id, indicator) {
 
   parts.push(h("div", {},
     h("dl", { class: "kv" },
-      h("dt", {}, "Record"), h("dd", { class: "mono" }, rec.id),
-      h("dt", {}, "Citation"), h("dd", {}, rec.citation),
-      h("dt", {}, "Hierarchy"), h("dd", {}, rec.hierarchy_path),
+      h("dt", {}, "Category"), h("dd", {}, prettyPath(rec.hierarchy_path)),
       h("dt", {}, "Location"), h("dd", {}, rec.location || "—"),
       h("dt", {}, "Reference unit"), h("dd", {}, rec.reference_unit || "— (not stated in source)"),
-      h("dt", {}, "Stage"), h("dd", {}, rec.stage || "—"),
-      h("dt", {}, "File SHA-256"), h("dd", { class: "mono" }, rec.provenance.file_sha256.slice(0, 16) + "…"),
-      h("dt", {}, "Ingested"), h("dd", {}, rec.provenance.ingested_at)),
+      h("dt", {}, "Stage"), h("dd", {}, rec.stage || "—")),
     rec.warnings.length ? h("div", { class: "tags" },
       rec.warnings.map((w) => h("span", { class: "tag warn", title: w.message }, "⚠ " + (WARNINGS[w.code] || w.code)))) : null));
 
@@ -404,7 +411,7 @@ async function openRecord(id, indicator) {
   } else {
     parts.push(h("p", { class: "muted" }, "This record carries no impact indicators. It is descriptive evidence only and cannot be used for calculation."));
   }
-  parts.push(h("div", {}, h("h4", {}, "Original CSV row (unmodified)"), h("pre", { class: "raw" }, JSON.stringify(rec.raw, null, 2))));
+  parts.push(h("div", {}, h("h4", {}, "Original data row (unmodified)"), h("pre", { class: "raw" }, JSON.stringify(rec.raw, null, 2))));
   $("#d-body").replaceChildren(...parts);
 }
 
@@ -415,7 +422,8 @@ async function loadTree(parent, ul) {
   const { nodes } = await api("/hierarchy" + (parent ? "?parent=" + encodeURIComponent(parent) : ""));
   ul.replaceChildren(...nodes.map((n) => {
     const children = h("ul", { hidden: true });
-    const caret = h("button", { type: "button", class: "caret", "aria-label": "Expand " + n.label, "aria-expanded": "false" }, "▸");
+    const label = n.depth === 0 ? sourceLabel(n.label) : n.label;
+    const caret = h("button", { type: "button", class: "caret", "aria-label": "Expand " + label, "aria-expanded": "false" }, "▸");
     caret.addEventListener("click", async () => {
       const open = children.hidden;
       children.hidden = !open;
@@ -427,7 +435,7 @@ async function loadTree(parent, ul) {
       }
     });
     const source = n.node_id.split("/")[0];
-    const name = h("button", { type: "button", class: "name", title: "Search this branch" }, n.label);
+    const name = h("button", { type: "button", class: "name", title: "Search this branch" }, label);
     name.addEventListener("click", () => {
       showTab("search");
       $("#q").value = n.depth === 0 ? "" : n.label;
