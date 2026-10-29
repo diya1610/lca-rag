@@ -191,9 +191,10 @@ Steps:
    Framework preset: *Other*; leave the build command empty.
 2. **Redis:** in the project, open *Storage → Marketplace → Upstash for Redis → Create* and
    connect it to the project. This sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
-3. **Environment variables:** set `GROQ_API_KEY` (your key), `LCA_AI_PROVIDER=groq`,
-   `ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com` and, optionally, `SITE_PASSWORD`.
-   Then redeploy.
+3. **Environment variables:** set `GROQ_API_KEY` (your key), `LCA_AI_PROVIDER=groq` and,
+   optionally, `SITE_PASSWORD`. Then redeploy. The project's `*.vercel.app` addresses
+   work without further setup; add `ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com` only
+   when a custom domain is connected.
 4. **Domain:** in Vercel, open *Settings → Domains* and add `yourdomain.com` and
    `www.yourdomain.com`. In GoDaddy, open *DNS* for the domain and add the records Vercel
    shows: usually an **A** record for `@` pointing to `76.76.21.21` and a **CNAME** record for

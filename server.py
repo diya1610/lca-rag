@@ -84,7 +84,10 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
             """Reject requests addressed to other host names (DNS-rebinding guard)."""
             host = (self.headers.get("Host") or "").strip().lower()
             port = getattr(getattr(self, "server", None), "server_address", (None, None))[1]
-            if host in (f"127.0.0.1:{port}", f"localhost:{port}") or host.split(":")[0] in allowed_hosts():
+            name = host.split(":")[0]
+            # On Vercel only the project's own *.vercel.app addresses (or added domains) reach us.
+            on_vercel = bool(os.environ.get("VERCEL")) and name.endswith(".vercel.app")
+            if host in (f"127.0.0.1:{port}", f"localhost:{port}") or name in allowed_hosts() or on_vercel:
                 return self._auth_ok()
             self._send(403, {"error": "forbidden_host"})
             return False

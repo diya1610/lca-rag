@@ -145,6 +145,9 @@ class DeployTests(unittest.TestCase):
                 self.assertEqual(post({"query": "steel"}, auth), 200)
                 self.assertEqual(post({"query": "steel"}, {**auth, "Host": "lca.example.com"}), 200)
                 self.assertEqual(post({"query": "steel"}, {**auth, "Host": "other.example.com"}), 403)
+            with unittest.mock.patch.dict(os.environ, {"VERCEL": "1"}):
+                self.assertEqual(post({"query": "steel"}, {"Host": "lca-rag-git-main-team.vercel.app"}), 200)
+                self.assertEqual(post({"query": "steel"}, {"Host": "evil.example.com"}), 403)
         finally:
             httpd.shutdown()
             httpd.server_close()
