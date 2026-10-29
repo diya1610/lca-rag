@@ -468,7 +468,29 @@ td.notes ul { margin: 6px 0 0; padding-left: 16px; }
   animation: drift 26s ease-in-out infinite alternate; }
 .hero::before { width: 440px; height: 440px; top: -140px; right: 6%; background: radial-gradient(circle, rgba(201, 162, 75, .32), transparent 70%); }
 .hero::after { width: 560px; height: 560px; bottom: -300px; left: -120px; background: radial-gradient(circle, rgba(139, 211, 165, .22), transparent 70%); animation-duration: 34s; }
-.hero-inner { position: relative; z-index: 1; }
+.hero-inner { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr); gap: 32px; align-items: center; }
+
+/* hero tree: line-drawn, leaves fade in, canopy sways very slightly */
+.hero-tree { width: 100%; max-width: 380px; justify-self: end; overflow: visible; }
+.hero-tree .branches path, .hero-tree .ground path { fill: none; stroke: rgba(251, 247, 238, .72); stroke-width: 2.2; stroke-linecap: round; }
+.hero-tree .branches path:first-child { stroke-width: 4; }
+.hero-tree .ground .soil { stroke: rgba(201, 162, 75, .55); stroke-width: 1.4; stroke-dasharray: 2 6; }
+.hero-tree .lf { stroke-width: 1; }
+.hero-tree .lf.mint { fill: rgba(139, 211, 165, .16); stroke: rgba(234, 246, 238, .32); }
+.hero-tree .lf.gold { fill: rgba(201, 162, 75, .2); stroke: rgba(201, 162, 75, .45); }
+.hero-tree .nodes circle { fill: var(--gold); }
+.hero-tree .canopy { transform-box: fill-box; transform-origin: 50% 100%; animation: sway 9s ease-in-out infinite alternate; }
+.hero-tree .branches path { stroke-dasharray: 260; animation: drawline .9s var(--ease) both .3s; }
+.hero-tree .lf { transform-box: fill-box; transform-origin: center; animation: leafin .5s var(--ease) both; }
+.hero-tree .lf:nth-child(1) { animation-delay: .55s; } .hero-tree .lf:nth-child(2) { animation-delay: .62s; }
+.hero-tree .lf:nth-child(3) { animation-delay: .69s; } .hero-tree .lf:nth-child(4) { animation-delay: .76s; }
+.hero-tree .lf:nth-child(5) { animation-delay: .83s; } .hero-tree .lf:nth-child(6) { animation-delay: .9s; }
+.hero-tree .lf:nth-child(7) { animation-delay: .97s; } .hero-tree .lf:nth-child(8) { animation-delay: 1.04s; }
+.hero-tree .lf:nth-child(9) { animation-delay: 1.11s; } .hero-tree .lf:nth-child(10) { animation-delay: 1.18s; }
+.hero-tree .nodes circle { animation: fade .4s var(--ease) both 1.2s; }
+@keyframes sway { from { transform: rotate(-.8deg); } to { transform: rotate(.8deg); } }
+@keyframes drawline { from { stroke-dashoffset: 260; } to { stroke-dashoffset: 0; } }
+@keyframes leafin { from { opacity: 0; transform: scale(.7); } }
 .hero .eyebrow, .hero h1, .hero .lede { animation: rise .42s var(--ease) both; }
 .hero .eyebrow { animation-delay: .05s; } .hero h1 { animation-delay: .13s; } .hero .lede { animation-delay: .21s; }
 .tabpanel > .card:first-child { animation: rise .42s var(--ease) both .28s; }
@@ -533,6 +555,10 @@ details[open] > :not(summary) { animation: rowin .24s var(--ease) both; }
 @media (max-width: 900px) {
   .kpis { grid-template-columns: 1fr 1fr; }
   .dash-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+  .hero-inner { grid-template-columns: 1fr; }
+  .hero-tree { display: none; }
 }
 @media (max-width: 760px) {
   .topbar-inner { height: auto; flex-wrap: wrap; padding-top: 10px; gap: 4px; }
