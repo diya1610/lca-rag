@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import math
@@ -39,12 +40,14 @@ import re
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
 
 import rag
 
 MAX_LINES = 500
 MAX_AI_LINES = 25
-AI_WORKERS = 4
+AI_WORKERS = 2  # free-tier providers rate-limit bursts
 # A factor this many times the median for the same indicator and unit is implausible.
 # Whole families in the export look per-tonne while labelled "kg" (cement 903, zinc 3200,
 # aluminium 2461-3229, copper 797-1323 for Climate change), so such values are never
@@ -270,13 +273,14 @@ def expand_rows(rows: list[dict], columns: dict, split_mode: str = "ranked",
     for row in rows:
         mats = [m for m in row["materials"] if m] or [""]
         qty, problem = _quantity(row["quantity_raw"])
-        fractions, how, notes = None, None, []
+        fractions, how, notes, ai_failed = None, None, [], False
         if len(mats) > 1 and qty is not None:
             if composer:
                 answer = composer(row)
                 if answer and answer.get("status") == "ok":
                     fractions, how, notes = [answer["fractions"][m] for m in mats], "ai", answer.get("assumptions", [])
             if fractions is None:
+                ai_failed = composer is not None  # AI composition was asked for but unavailable
                 how = "equal" if split_mode == "equal" else "ranked"
                 fractions = _split_weights(len(mats), how)
         for k, mat in enumerate(mats, 1):
@@ -288,7 +292,8 @@ def expand_rows(rows: list[dict], columns: dict, split_mode: str = "ranked",
             if fractions:
                 ln["quantity_raw"] = repr(qty * fractions[k - 1])
                 ln["composition"] = {"mode": how, "fraction": fractions[k - 1], "of": row["quantity_raw"],
-                                     "unit": row["unit"], "cell": row["material_cell"], "assumptions": notes}
+                                     "unit": row["unit"], "cell": row["material_cell"], "assumptions": notes,
+                                     "ai_failed": ai_failed}
             else:
                 ln["quantity_raw"] = row["quantity_raw"]
             lines.append(ln)
@@ -527,19 +532,25 @@ def is_electricity(material: str) -> bool:
     return "electricity" in rag.tokens(material) or "electric power" in material.lower()
 
 
+def _ck(key) -> str:
+    """Canonical text form of a cache key. Keys contain nested tuples (a component's
+    materials); JSON turns those into lists, so tuples would not match after a reload."""
+    return key if isinstance(key, str) else json.dumps(key, ensure_ascii=False)
+
+
 def _ai_cache() -> dict:
     global _AI_CACHE
     if _AI_CACHE is None:
         try:
             entries = json.loads(AI_CACHE_PATH.read_text(encoding="utf-8"))
-            _AI_CACHE = {tuple(e["key"]): e["answer"] for e in entries}
+            _AI_CACHE = {_ck(e["key"]): e["answer"] for e in entries}
         except (OSError, ValueError, KeyError, TypeError):
             _AI_CACHE = {}
     return _AI_CACHE
 
 
 def _save_ai_cache() -> None:
-    entries = [{"key": list(k), "answer": v} for k, v in _ai_cache().items()]
+    entries = [{"key": k, "answer": v} for k, v in _ai_cache().items()]
     tmp = AI_CACHE_PATH.with_suffix(".tmp")
     tmp.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
     tmp.replace(AI_CACHE_PATH)
@@ -604,8 +615,9 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
             fallback = ai_fallback.estimate
 
         def run(r):
-            key = ("ai", r["material"], r["unit"], indicator, source, provider)
             persistent = fallback_is_default
+            key = ("ai", r["material"], r["unit"], indicator, source, provider)
+            key = _ck(key) if persistent else key
             with _AI_LOCK:
                 answer = (_ai_cache() if persistent else memo).get(key)
             if answer is None:
@@ -689,7 +701,7 @@ def _ai_composer(provider):
     import ai_fallback
 
     def compose(row):
-        key = ("composition", row["component"], tuple(row["materials"]), row["quantity_raw"], provider)
+        key = _ck(("composition", row["component"], tuple(row["materials"]), row["quantity_raw"], provider))
         with _AI_LOCK:
             answer = _ai_cache().get(key)
         if answer is None:
@@ -708,7 +720,7 @@ def eco_ideas(facts: dict, provider: str | None = None, generator=None) -> dict:
     if generator is None:
         import ai_fallback
         generator = ai_fallback.ideas
-    key = ("ideas", facts.get("component"), tuple(facts.get("materials") or ()), provider)
+    key = _ck(("ideas", facts.get("component"), tuple(facts.get("materials") or ()), provider))
     with _AI_LOCK:
         cached = _ai_cache().get(key)
     if cached is not None:
@@ -719,6 +731,58 @@ def eco_ideas(facts: dict, provider: str | None = None, generator=None) -> dict:
             _ai_cache()[key] = answer
             _save_ai_cache()
     return answer
+
+
+# ---------------------------------------------------------------------------
+# Saved analyses: the same file with the same settings gives the same answer
+# ---------------------------------------------------------------------------
+
+RESULTS_DIR = rag.INDEX_DIR / "results"
+_CODE_FILES = ("ebom.py", "rag.py", "ai_fallback.py")
+
+
+def _code_version() -> str:
+    """Changes whenever the analysis code or the reviewed reference data changes."""
+    h = hashlib.sha256()
+    for name in _CODE_FILES:
+        h.update((Path(__file__).parent / name).read_bytes())
+    for path in (CORRECTIONS_PATH, GRID_REFERENCES_PATH):
+        h.update(path.read_bytes())
+    return h.hexdigest()[:16]
+
+
+def _result_key(text: str, opts: dict) -> str:
+    payload = json.dumps({"csv": text.replace("\r\n", "\n").strip(), "opts": opts, "code": _code_version()},
+                         sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _complete(result: dict) -> bool:
+    """Only freeze results without AI outages, so a later run can still fill those gaps."""
+    return not any((l.get("provisional") or {}).get("status") in ("unavailable", "skipped")
+                   or (l.get("composition") or {}).get("ai_failed") for l in result["lines"])
+
+
+def analyse_saved(engine: rag.Engine, text: str, refresh: bool = False, **opts) -> dict:
+    """analyse() with the result saved per (file content, settings, code version)."""
+    key = _result_key(text, {k: opts.get(k) for k in sorted(opts) if k not in ("fallback", "composer")})
+    path = RESULTS_DIR / f"{key}.json"
+    if not refresh and path.exists():
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            saved["saved"] = {**saved.get("saved", {}), "restored": True}
+            return saved
+        except (OSError, ValueError):
+            pass
+    result = analyse(engine, text, **opts)
+    result["saved"] = {"restored": False, "complete": _complete(result),
+                       "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "key": key[:12]}
+    if result["saved"]["complete"] and not opts.get("fallback"):
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    return result
 
 
 def _resolve_line(engine, catalog: Catalog, ln: dict, indicator: str, source, default_unit) -> dict:
@@ -1081,8 +1145,6 @@ def _recommendations(results: list[dict], catalog: Catalog) -> list[dict]:
         advice = []
         if r["scores"] and r["scores"]["criticality_tier"] == "high":
             advice.append("Critical raw material: assess supply risk and substitutes.")
-        if r["status"] in ("proxy", "provisional"):
-            advice.append("Value is not from an exact database record; confirm with supplier or primary data.")
         if r["hotspot"]:
             advice.append(f"Part of a carbon hotspot ({r['component']}); prioritise in redesign.")
         recy = (r.get("recyclability") or "").lower()

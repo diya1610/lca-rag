@@ -103,6 +103,10 @@ function setEbomText(text, name) {
   eb.scenarios = [];
   const rows = text.split(/\r?\n/).filter((l) => l.trim()).length - 1;
   $("#ebom-filename").textContent = `${name} · ${Math.max(rows, 0)} line${rows === 1 ? "" : "s"}`;
+  const drop = $("#drop");
+  drop.classList.remove("loaded");
+  void drop.offsetWidth;  // restart the confirmation pulse
+  drop.classList.add("loaded");
   $("#ebom-go").disabled = false;
 }
 
@@ -122,9 +126,9 @@ function settings() {
   };
 }
 
-async function analyseEbom() {
+async function analyseEbom(opts) {
   if (!eb.text) return;
-  const body = settings();
+  const body = { ...settings(), refresh: Boolean(opts && opts.refresh) };
   const seq = ++eb.seq;
   const btn = $("#ebom-go");
   btn.disabled = true;
@@ -145,9 +149,19 @@ async function analyseEbom() {
 
 // ---------------------------------------------------------------- dashboard
 
+function savedNote(r) {
+  const s = r.saved || {};
+  const text = s.restored ? "Saved analysis restored: this file and these settings always give these answers."
+    : s.complete ? "Analysis saved: running this file again with the same settings gives the same answers."
+      : "Not saved yet: some AI answers were unavailable. Run again to fill them in.";
+  return h("div", { class: "saved-note" + (s.complete === false ? " warn" : "") },
+    h("span", { class: "saved-icon", "aria-hidden": "true" }, s.complete === false ? "↻" : "✓"), h("span", {}, text),
+    h("button", { type: "button", class: "chip", onclick: () => analyseEbom({ refresh: true }) }, "Run fresh"));
+}
+
 function renderEbom() {
   const r = eb.result;
-  const out = [kpis(r)];
+  const out = [savedNote(r), kpis(r)];
   if (r.product.flagged_lines) {
     out.push(h("div", { class: "banner insufficient" }, h("div", {},
       h("h3", {}, `${r.product.flagged_lines} source factor${r.product.flagged_lines === 1 ? "" : "s"} looked implausible`),
@@ -463,7 +477,7 @@ function renderWhatIf(w) {
   const col = (title, s, sc) => h("div", { class: "sc-result" + (sc ? "" : " base") },
     h("h4", {}, title),
     h("div", { class: "grade-row" }, gradeBadge(s.grade, true),
-      h("div", {}, h("div", { class: "v" }, s.total == null ? "n/a" : fmt(s.total), h("small", {}, " kg CO₂-eq")),
+      h("div", {}, h("div", { class: "v", "data-count": s.total ?? "" }, s.total == null ? "n/a" : fmt(s.total), h("small", {}, " kg CO₂-eq")),
         h("div", { class: "s" }, `score ${s.score == null ? "n/a" : s.score.toFixed(1)}`))),
     sc ? h("div", { class: "delta " + (sc.delta < 0 ? "down" : sc.delta > 0 ? "up" : "") },
       sc.delta == null ? "n/a" : `${sc.delta > 0 ? "+" : ""}${fmt(sc.delta)} kg CO₂-eq (${sc.delta_pct > 0 ? "+" : ""}${pct(sc.delta_pct, 1)})`,

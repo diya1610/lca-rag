@@ -444,7 +444,79 @@ td.notes ul { margin: 6px 0 0; padding-left: 16px; }
    `font` shorthand used above resets font-variant-numeric. */
 .tile .v, .bignum, .sc-result .v, .grade, .rank, .rec-head b, .card-title, .hero h1 { font-variant-numeric: lining-nums tabular-nums; }
 
+/* ---------- saved analysis note ---------- */
+.saved-note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px 10px 14px; border-radius: 999px;
+  background: var(--good-bg); color: var(--good-ink); font-size: 13.5px; align-self: flex-start; }
+.saved-note.warn { background: var(--okay-bg); color: var(--okay-ink); }
+.saved-note .chip { background: var(--white); border-color: transparent; padding: 4px 12px; font-size: 12.5px; }
+.saved-icon { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--white); font-size: 12px; }
+
 /* ---------- motion: subtle, organic ---------- */
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes rowin { from { opacity: 0; transform: translateY(6px); } }
+@keyframes drift { to { transform: translate(-70px, 46px) scale(1.1); } }
+@keyframes panel { from { opacity: 0; transform: translateY(8px); } }
+@keyframes radarin { from { opacity: 0; transform: scale(.6); } }
+@keyframes gradein { from { opacity: 0; transform: scale(.86); } }
+@keyframes barin { from { transform: scaleY(0); } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(31, 77, 54, .28); } 100% { box-shadow: 0 0 0 16px rgba(31, 77, 54, 0); } }
+
+/* hero: staggered entrance and slow ambient light */
+.hero { position: relative; overflow: hidden; }
+.hero::before, .hero::after { content: ""; position: absolute; border-radius: 50%; filter: blur(50px); pointer-events: none;
+  animation: drift 26s ease-in-out infinite alternate; }
+.hero::before { width: 440px; height: 440px; top: -140px; right: 6%; background: radial-gradient(circle, rgba(201, 162, 75, .32), transparent 70%); }
+.hero::after { width: 560px; height: 560px; bottom: -300px; left: -120px; background: radial-gradient(circle, rgba(139, 211, 165, .22), transparent 70%); animation-duration: 34s; }
+.hero-inner { position: relative; z-index: 1; }
+.hero .eyebrow, .hero h1, .hero .lede { animation: rise .42s var(--ease) both; }
+.hero .eyebrow { animation-delay: .05s; } .hero h1 { animation-delay: .13s; } .hero .lede { animation-delay: .21s; }
+.tabpanel > .card:first-child { animation: rise .42s var(--ease) both .28s; }
+.logo { transition: transform .3s var(--ease); }
+.brand:hover .logo { transform: rotate(-14deg); }
+
+/* tab switches, presses, focus */
+.tabpanel:not([hidden]) { animation: panel .28s var(--ease) both; }
+button.primary:active, .chip:active, .tab:active { transform: scale(.97); }
+.query-row input:focus { background: var(--white); }
+
+/* staggered groups */
+.kpis > .tile.reveal:nth-child(2) { transition-delay: .06s; } .kpis > .tile.reveal:nth-child(3) { transition-delay: .12s; }
+.kpis > .tile.reveal:nth-child(4) { transition-delay: .18s; }
+.recs > .rec.reveal:nth-child(3n+2), .ideas-wrap > .rec.reveal:nth-child(3n+2) { transition-delay: .06s; }
+.recs > .rec.reveal:nth-child(3n), .ideas-wrap > .rec.reveal:nth-child(3n) { transition-delay: .12s; }
+.sisters .sister, .advice li, .loading li { animation: rowin .28s var(--ease) both; }
+.sisters .sister:nth-child(3) { animation-delay: .06s; } .sisters .sister:nth-child(4) { animation-delay: .12s; }
+#items-body tr { animation: rowin .3s var(--ease) both; }
+#items-body tr:nth-child(2) { animation-delay: .02s; } #items-body tr:nth-child(3) { animation-delay: .04s; }
+#items-body tr:nth-child(4) { animation-delay: .06s; } #items-body tr:nth-child(5) { animation-delay: .08s; }
+#items-body tr:nth-child(6) { animation-delay: .1s; } #items-body tr:nth-child(7) { animation-delay: .12s; }
+#items-body tr:nth-child(8) { animation-delay: .14s; } #items-body tr:nth-child(n+9) { animation-delay: .16s; }
+.tree ul > li { animation: rowin .26s var(--ease) both; }
+details[open] > :not(summary) { animation: rowin .24s var(--ease) both; }
+.sc-grid > .sc-result { animation: rise .32s var(--ease) both; }
+.sc-grid > .sc-result:nth-child(2) { animation-delay: .07s; } .sc-grid > .sc-result:nth-child(3) { animation-delay: .14s; }
+.sc-grid > .sc-result:nth-child(4) { animation-delay: .21s; }
+
+/* charts and marks */
+.radar .shape { transform-box: fill-box; transform-origin: center; animation: radarin .5s var(--ease) both .1s; }
+.radar .dot { animation: fade .3s var(--ease) both .45s; }
+.grade.big { animation: gradein .4s var(--ease) both .15s; }
+.card-title::before { transform-origin: top; animation: barin .4s var(--ease) both .1s; }
+.section-title::after { transform-origin: left; animation: grow .6s var(--ease) both; }
+.saved-note { animation: rise .32s var(--ease) both; }
+
+/* drop zone */
+.drop-title { transition: transform .24s var(--ease); }
+.drop:hover .drop-title { transform: translateY(-2px); }
+.drop.loaded { animation: pulse 1.1s var(--ease) 1; border-color: var(--forest-700); }
+
+/* loading skeleton */
+.skeleton { display: grid; gap: 10px; width: min(560px, 100%); margin-top: 6px; }
+.skeleton i { display: block; height: 12px; border-radius: 999px; background: linear-gradient(90deg, var(--earth-track) 0%, #F8F4E8 50%, var(--earth-track) 100%);
+  background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.skeleton i:nth-child(2) { width: 82%; } .skeleton i:nth-child(3) { width: 58%; }
+
 @keyframes grow { from { transform: scaleX(0); } }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide { from { transform: translateX(24px); opacity: 0; } }

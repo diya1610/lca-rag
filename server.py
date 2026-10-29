@@ -176,7 +176,7 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
                             split_mode=body.get("split_mode") or "ranked", grid=body.get("grid") or "CN")
                 try:
                     if path == "/ebom":
-                        out = ebom.analyse(*args, **opts)
+                        out = ebom.analyse_saved(*args, refresh=bool(body.get("refresh", False)), **opts)
                     else:
                         scenarios = body.get("scenarios")
                         if not isinstance(scenarios, list):

@@ -110,8 +110,8 @@ def provider_status() -> dict:
             "claude": claude, "ollama": ollama}
 
 
-MAX_RETRIES = 4
-MAX_RETRY_WAIT_S = 20.0
+MAX_RETRIES = 6
+MAX_RETRY_WAIT_S = 30.0
 
 
 def _http_post_json(url: str, payload: dict, headers: dict) -> dict:
@@ -163,7 +163,7 @@ def call_groq(messages, model=None, transport=_http_post_json, schema=None) -> t
         raise RuntimeError("no Groq key: set GROQ_API_KEY or save ~/.config/lca_rag/groq_key")
     model = model or os.environ.get("LCA_GROQ_MODEL", "openai/gpt-oss-120b")
     data = transport("https://api.groq.com/openai/v1/chat/completions", {
-        "model": model, "messages": messages, "temperature": 0,
+        "model": model, "messages": messages, "temperature": 0, "seed": 7,  # repeatable answers
         "response_format": {"type": "json_object"},
     }, {"Authorization": f"Bearer {key}"})
     return data["choices"][0]["message"]["content"], model
@@ -174,7 +174,7 @@ def call_ollama(messages, model=None, transport=_http_post_json, schema=None) ->
     model = model or os.environ.get("LCA_OLLAMA_MODEL", "llama3.1")
     data = transport(f"{host}/api/chat", {
         "model": model, "messages": messages, "stream": False, "format": "json",
-        "options": {"temperature": 0},
+        "options": {"temperature": 0, "seed": 7},
     }, {})
     return data["message"]["content"], model
 

@@ -139,6 +139,65 @@ class EbomTests(unittest.TestCase):
             self.assertFalse((Path(tmp) / "ai_cache.json").exists())
         self.assertEqual(by_item(first)["B-007"]["status"], "provisional")
 
+    def test_same_file_gives_same_answer(self):
+        import tempfile
+        import unittest.mock
+        values = iter([10.0, 99.0, 55.0, 77.0, 33.0, 44.0])
+
+        def changing(**kw):  # an AI that answers differently every time
+            v = next(values)
+            est = {"can_estimate": True, "value": v, "lower": v / 2, "upper": v * 2, "impact_unit": "kg CO2-eq",
+                   "explanation": "", "system_boundary": "x", "assumptions": ["a"], "missing_information": []}
+            return {"status": "provisional", "estimate": est}
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.object(ebom, "RESULTS_DIR", Path(tmp) / "results"), \
+                unittest.mock.patch.object(ebom, "AI_CACHE_PATH", Path(tmp) / "ai.json"), \
+                unittest.mock.patch.object(ebom, "_AI_CACHE", None), \
+                unittest.mock.patch.object(ai_fallback, "estimate", changing):
+            first = ebom.analyse_saved(self.engine, SAMPLE, use_ai=True, provider="stub")
+            ebom._AI_CACHE = None  # even without the AI cache, the saved analysis is reused
+            again = ebom.analyse_saved(self.engine, SAMPLE.replace("\n", "\r\n"), use_ai=True, provider="stub")
+            self.assertTrue(again["saved"]["restored"])
+            self.assertEqual(again["product"]["total"], first["product"]["total"])
+            fresh = ebom.analyse_saved(self.engine, SAMPLE, refresh=True, use_ai=True, provider="stub")
+            self.assertFalse(fresh["saved"]["restored"])
+            other = ebom.analyse_saved(self.engine, SAMPLE, use_ai=True, provider="stub", grid="US-CAL-CISO")
+            self.assertFalse(other["saved"]["restored"])  # different settings, separate result
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.object(ebom, "RESULTS_DIR", Path(tmp) / "results"), \
+                unittest.mock.patch.object(ebom, "AI_CACHE_PATH", Path(tmp) / "ai.json"), \
+                unittest.mock.patch.object(ebom, "_AI_CACHE", None), \
+                unittest.mock.patch.object(ai_fallback, "estimate", lambda **kw: {"status": "unavailable", "error": "429"}):
+            out = ebom.analyse_saved(self.engine, SAMPLE, use_ai=True, provider="stub")
+            self.assertFalse(out["saved"]["complete"])
+            self.assertFalse((Path(tmp) / "results").exists())  # outages are never frozen
+        failing = lambda row: {"status": "unavailable", "error": "429"}  # noqa: E731
+        res = ebom.analyse(self.engine, IPHONE, split_mode="ai", use_ai=True, composer=failing,
+                           fallback=stub_estimate())
+        self.assertTrue(by_item(res)["01.1"]["composition"]["ai_failed"])
+        self.assertFalse(ebom._complete(res))  # a fallback split must not be frozen either
+
+    def test_ai_cache_survives_restart_with_compositions(self):
+        import tempfile
+        import unittest.mock
+        calls = []
+
+        def compose(component, materials, mass, unit, provider=None):
+            calls.append(component)
+            return {"status": "ok", "fractions": {m: 1 / len(materials) for m in materials}, "assumptions": ["even"]}
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.object(ebom, "AI_CACHE_PATH", Path(tmp) / "ai.json"), \
+                unittest.mock.patch.object(ebom, "_AI_CACHE", None), \
+                unittest.mock.patch.object(ai_fallback, "composition", compose), \
+                unittest.mock.patch.object(ai_fallback, "estimate", stub_estimate()):
+            first = ebom.analyse(self.engine, IPHONE, split_mode="ai", use_ai=True, provider="stub")
+            n = len(calls)
+            ebom._AI_CACHE = None  # restart: everything must come back from disk
+            again = ebom.analyse(self.engine, IPHONE, split_mode="ai", use_ai=True, provider="stub")
+            self.assertEqual(len(calls), n)  # no composition asked twice
+            self.assertGreater(len(ebom._ai_cache()), n)  # compositions and estimates all reloaded
+            self.assertEqual(again["product"]["total"], first["product"]["total"])
+
     def test_upstream_scoring_mode(self):
         up = ebom.analyse(self.engine, SAMPLE, scoring="upstream")
         self.assertEqual(up["scoring"]["references_p95_per_kg"], ebom.UPSTREAM_REFS)

@@ -79,7 +79,8 @@ function countUp(el) {
 
 function loadingSteps(container, steps, every = 1400) {
   const items = steps.filter(Boolean).map((t) => h("li", {}, t));
-  container.replaceChildren(h("div", { class: "loading", role: "status" }, h("span", { class: "spinner" }), h("ol", {}, items)));
+  container.replaceChildren(h("div", { class: "loading", role: "status" }, h("span", { class: "spinner" }), h("ol", {}, items),
+    h("div", { class: "skeleton", "aria-hidden": "true" }, h("i"), h("i"), h("i"))));
   let i = 0;
   const mark = () => items.forEach((li, k) => { li.className = k < i ? "done" : k === i ? "now" : ""; });
   mark();
