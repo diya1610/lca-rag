@@ -1,0 +1,9 @@
+upstream/
+index/
+tests/
+eval/
+desktop.py
+dense.py
+requirements-dense.txt
+*.log
+__pycache__/

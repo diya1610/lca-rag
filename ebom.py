@@ -36,6 +36,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import re
 import sys
 import threading
@@ -44,6 +45,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import rag
+import store
 
 MAX_LINES = 500
 MAX_AI_LINES = 25
@@ -58,7 +60,8 @@ MAX_SCENARIOS = 3
 # AI answers are saved and reused (also across restarts), so the dashboard, what-if runs
 # and later demos show the same provisional values instead of re-asking a
 # non-deterministic model. Clear with clear_ai_cache() or POST /ebom/clear-ai-cache.
-AI_CACHE_PATH = rag.INDEX_DIR / "ai_cache.json"
+STATE_DIR = Path(os.environ.get("LCA_STATE_DIR") or rag.INDEX_DIR)  # writable; /tmp on serverless
+AI_CACHE_PATH = STATE_DIR / "ai_cache.json"
 AI_CACHE_SIZE = 1000
 _AI_CACHE: dict | None = None
 _AI_LOCK = threading.Lock()
@@ -550,10 +553,44 @@ def _ai_cache() -> dict:
 
 
 def _save_ai_cache() -> None:
+    if store.enabled():
+        return  # Redis is the persistent layer; see _cache_put
     entries = [{"key": k, "answer": v} for k, v in _ai_cache().items()]
-    tmp = AI_CACHE_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(AI_CACHE_PATH)
+    try:
+        AI_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = AI_CACHE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(AI_CACHE_PATH)
+    except OSError:
+        pass  # read-only disk: answers still live in memory for this process
+
+
+def _redis_key(key: str) -> str:
+    gen = store.get_json("ai:gen") or 0  # bumped by clear_ai_cache()
+    return f"ai:{gen}:{hashlib.sha256(key.encode('utf-8')).hexdigest()}"
+
+
+def _cache_get(key: str):
+    """Persistent AI cache: in-memory copy, then the file (local) or Redis (deployed)."""
+    with _AI_LOCK:
+        answer = _ai_cache().get(key)
+    if answer is None and store.enabled():
+        answer = store.get_json(_redis_key(key))
+        if answer is not None:
+            with _AI_LOCK:
+                _ai_cache()[key] = answer
+    return answer
+
+
+def _cache_put(key: str, answer) -> None:
+    with _AI_LOCK:
+        cache = _ai_cache()
+        if len(cache) >= AI_CACHE_SIZE:
+            cache.pop(next(iter(cache)))
+        cache[key] = answer
+        _save_ai_cache()
+    if store.enabled():
+        store.set_json(_redis_key(key), answer)
 
 
 def clear_ai_cache() -> int:
@@ -561,6 +598,8 @@ def clear_ai_cache() -> int:
         n = len(_ai_cache())
         _ai_cache().clear()
         AI_CACHE_PATH.unlink(missing_ok=True)
+    if store.enabled():
+        store.set_json("ai:gen", (store.get_json("ai:gen") or 0) + 1)
     return n
 
 
@@ -618,20 +657,21 @@ def analyse(engine: rag.Engine, text: str, indicator: str = "Climate change",
             persistent = fallback_is_default
             key = ("ai", r["material"], r["unit"], indicator, source, provider)
             key = _ck(key) if persistent else key
-            with _AI_LOCK:
-                answer = (_ai_cache() if persistent else memo).get(key)
+            if persistent:
+                answer = _cache_get(key)
+            else:
+                with _AI_LOCK:
+                    answer = memo.get(key)
             if answer is None:
                 answer = fallback(query=r["material"], indicator=indicator, reference_unit=r["unit"],
                                   constraints={"source": source, "unit": r["unit"], "location": r["location"]},
                                   context=r.get("_context", [])[:5], provider=provider)
                 if answer.get("status") != "unavailable":  # never cache outages
-                    with _AI_LOCK:
-                        cache = _ai_cache() if persistent else memo
-                        if persistent and len(cache) >= AI_CACHE_SIZE:
-                            cache.pop(next(iter(cache)))
-                        cache[key] = answer
-                        if persistent:
-                            _save_ai_cache()
+                    if persistent:
+                        _cache_put(key, answer)
+                    else:
+                        with _AI_LOCK:
+                            memo[key] = answer
             r["provisional"] = _provisional(answer, r["quantity"], climate)
             if r["provisional"]["contribution"] is not None:
                 r.update(status="provisional", tier="provisional",
@@ -702,15 +742,12 @@ def _ai_composer(provider):
 
     def compose(row):
         key = _ck(("composition", row["component"], tuple(row["materials"]), row["quantity_raw"], provider))
-        with _AI_LOCK:
-            answer = _ai_cache().get(key)
+        answer = _cache_get(key)
         if answer is None:
             answer = ai_fallback.composition(row["component"], row["materials"], row["quantity_raw"],
                                              row["unit"], provider=provider)
             if answer.get("status") == "ok":
-                with _AI_LOCK:
-                    _ai_cache()[key] = answer
-                    _save_ai_cache()
+                _cache_put(key, answer)
         return answer
     return compose
 
@@ -721,15 +758,12 @@ def eco_ideas(facts: dict, provider: str | None = None, generator=None) -> dict:
         import ai_fallback
         generator = ai_fallback.ideas
     key = _ck(("ideas", facts.get("component"), tuple(facts.get("materials") or ()), provider))
-    with _AI_LOCK:
-        cached = _ai_cache().get(key)
+    cached = _cache_get(key)
     if cached is not None:
         return cached
     answer = generator(facts, provider=provider)
     if answer.get("status") == "ok":
-        with _AI_LOCK:
-            _ai_cache()[key] = answer
-            _save_ai_cache()
+        _cache_put(key, answer)
     return answer
 
 
@@ -737,7 +771,7 @@ def eco_ideas(facts: dict, provider: str | None = None, generator=None) -> dict:
 # Saved analyses: the same file with the same settings gives the same answer
 # ---------------------------------------------------------------------------
 
-RESULTS_DIR = rag.INDEX_DIR / "results"
+RESULTS_DIR = STATE_DIR / "results"
 _CODE_FILES = ("ebom.py", "rag.py", "ai_fallback.py")
 
 
@@ -767,21 +801,30 @@ def analyse_saved(engine: rag.Engine, text: str, refresh: bool = False, **opts) 
     """analyse() with the result saved per (file content, settings, code version)."""
     key = _result_key(text, {k: opts.get(k) for k in sorted(opts) if k not in ("fallback", "composer")})
     path = RESULTS_DIR / f"{key}.json"
-    if not refresh and path.exists():
-        try:
-            saved = json.loads(path.read_text(encoding="utf-8"))
+    if not refresh:
+        saved = store.get_json(f"res:{key}") if store.enabled() else None
+        if saved is None and path.exists():
+            try:
+                saved = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                saved = None
+        if saved is not None:
             saved["saved"] = {**saved.get("saved", {}), "restored": True}
             return saved
-        except (OSError, ValueError):
-            pass
     result = analyse(engine, text, **opts)
     result["saved"] = {"restored": False, "complete": _complete(result),
                        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "key": key[:12]}
     if result["saved"]["complete"] and not opts.get("fallback"):
-        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(path)
+        if store.enabled():
+            store.set_json(f"res:{key}", result)
+        else:
+            try:
+                RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+                tmp.replace(path)
+            except OSError:
+                pass
     return result
 
 

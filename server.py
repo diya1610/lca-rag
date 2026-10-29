@@ -1,6 +1,11 @@
-"""Loopback-only JSON API and web interface for the LCA RAG index (standard library only).
+"""JSON API and web interface for the LCA RAG index (standard library only).
 
-    python server.py [--port 8765] [--dense] [--open]
+    python server.py [--port 8765] [--dense] [--open]      # local, loopback only
+
+Deployed (e.g. Vercel, see api/index.py), these environment variables apply:
+    ALLOWED_HOSTS     comma-separated host names to accept (Vercel's own URLs are added)
+    SITE_PASSWORD     if set, every request needs HTTP Basic auth with this password
+    AI_RATE_LIMIT     AI-using requests per visitor per hour (default 30; needs Redis)
 
 Web UI: GET /  (static files in web/)
 Endpoints: GET /health, GET /meta, GET /hierarchy[?parent=...], GET /record?id=...,
@@ -11,8 +16,12 @@ Endpoints: GET /health, GET /meta, GET /hierarchy[?parent=...], GET /record?id=.
 from __future__ import annotations
 
 import argparse
+import base64
+import hmac
 import json
+import os
 import re
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,12 +30,22 @@ from urllib.parse import parse_qs, urlparse
 import ai_fallback
 import ebom
 import rag
+import store
 
 HOST = "127.0.0.1"
 MAX_BODY_BYTES = 64 * 1024
 MAX_EBOM_BYTES = 1024 * 1024
 WEB_DIR = Path(__file__).resolve().parent / "web"
 FONT_RE = re.compile(r"/fonts/([A-Za-z]+-(?:normal|italic)\d*\.woff2)")
+def allowed_hosts() -> set[str]:
+    """Host names accepted besides loopback: ALLOWED_HOSTS plus the deployment's own URLs."""
+    hosts = {h.strip().lower() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()}
+    for var in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+        if os.environ.get(var):
+            hosts.add(os.environ[var].strip().lower())
+    return hosts
+
+
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
@@ -63,11 +82,54 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
 
         def _host_ok(self) -> bool:
             """Reject requests addressed to other host names (DNS-rebinding guard)."""
-            port = self.server.server_address[1]
-            if self.headers.get("Host") in (f"127.0.0.1:{port}", f"localhost:{port}"):
-                return True
+            host = (self.headers.get("Host") or "").strip().lower()
+            port = getattr(getattr(self, "server", None), "server_address", (None, None))[1]
+            if host in (f"127.0.0.1:{port}", f"localhost:{port}") or host.split(":")[0] in allowed_hosts():
+                return self._auth_ok()
             self._send(403, {"error": "forbidden_host"})
             return False
+
+        def _auth_ok(self) -> bool:
+            """Optional site-wide password (HTTP Basic, any user name)."""
+            password = os.environ.get("SITE_PASSWORD")
+            if not password:
+                return True
+            header = self.headers.get("Authorization") or ""
+            if header.startswith("Basic "):
+                try:
+                    given = base64.b64decode(header[6:]).decode("utf-8").split(":", 1)[1]
+                except (ValueError, IndexError, UnicodeDecodeError):
+                    given = ""
+                if hmac.compare_digest(given.encode(), password.encode()):
+                    return True
+            data = b"Password required"
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="LCA RAG", charset="UTF-8"')
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return False
+
+        def _path(self) -> str:
+            # serverless rewrites may deliver /api/index/... ; the app's routes start at /
+            path = urlparse(self.path).path
+            if path.startswith("/api/index"):
+                path = path[len("/api/index"):] or "/"
+            return path
+
+        def _ai_allowed(self) -> bool:
+            """Per-visitor hourly limit on AI-using requests (deployed with Redis)."""
+            limit = int(os.environ.get("AI_RATE_LIMIT", "30"))
+            if limit <= 0 or not store.enabled():
+                return True
+            ip = (self.headers.get("X-Forwarded-For") or self.client_address[0] or "?").split(",")[0].strip()
+            n = store.incr_with_ttl(f"rl:{ip}:{int(time.time() // 3600)}", 3600)
+            if n is not None and n > limit:
+                self._send(429, {"error": "rate_limited",
+                                 "message": "AI limit reached for this hour. Turn off the AI fallback or try again later."})
+                return False
+            return True
 
         def _body(self, max_bytes: int = MAX_BODY_BYTES) -> dict | None:
             # Requiring JSON forces a CORS preflight for cross-site requests, which this
@@ -116,24 +178,25 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
             if not self._host_ok():
                 return
             url = urlparse(self.path)
+            path = self._path()
             qs = {k: v[0] for k, v in parse_qs(url.query).items()}
-            font = FONT_RE.fullmatch(url.path)
+            font = FONT_RE.fullmatch(path)
             if font and (WEB_DIR / "fonts" / font.group(1)).is_file():
                 data = (WEB_DIR / "fonts" / font.group(1)).read_bytes()
                 self._headers(200, "font/woff2", len(data))
                 self.wfile.write(data)
-            elif url.path in STATIC:
-                name, ctype = STATIC[url.path]
+            elif path in STATIC:
+                name, ctype = STATIC[path]
                 data = (WEB_DIR / name).read_bytes()
                 self._headers(200, ctype, len(data))
                 self.wfile.write(data)
-            elif url.path == "/health":
+            elif path == "/health":
                 self._send(200, engine.health())
-            elif url.path == "/meta":
+            elif path == "/meta":
                 self._send(200, self._meta())
-            elif url.path == "/hierarchy":
+            elif path == "/hierarchy":
                 self._send(200, {"parent": qs.get("parent"), "nodes": engine.hierarchy(qs.get("parent"))})
-            elif url.path == "/record":
+            elif path == "/record":
                 rec = engine.record(qs.get("id", ""))
                 if rec is None:
                     self._send(404, {"error": "not_found", "id": qs.get("id")})
@@ -145,7 +208,7 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
         def do_POST(self):
             if not self._host_ok():
                 return
-            path = urlparse(self.path).path
+            path = self._path()
             if path not in ("/query", "/calculate", "/ebom", "/ebom/whatif", "/ebom/clear-ai-cache",
                             "/ebom/ideas"):
                 self._send(404, {"error": "not_found"})
@@ -153,7 +216,12 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
             body = self._body(MAX_EBOM_BYTES if path.startswith("/ebom") else MAX_BODY_BYTES)
             if body is None:
                 return
+            if (body.get("use_ai") or path == "/ebom/ideas") and not self._ai_allowed():
+                return
             if path == "/ebom/clear-ai-cache":
+                if os.environ.get("VERCEL") and not os.environ.get("SITE_PASSWORD"):
+                    self._send(403, {"error": "forbidden", "message": "Clearing saved AI answers is disabled on a public site."})
+                    return
                 self._send(200, {"cleared": ebom.clear_ai_cache()})
             elif path == "/ebom/ideas":
                 facts = {k: body.get(k) for k in ("component", "materials", "share", "impact_kg_co2eq",

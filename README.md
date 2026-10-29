@@ -169,6 +169,37 @@ review the AI rows (each shows its range and explanation) before relying on a to
 - **Tables:** a sortable, filterable item table (score, grade, confidence, hotspot, notes),
   a material-wise table, and a CSV export.
 
+## Deploying (Vercel + Upstash Redis + a GoDaddy domain)
+
+The whole app runs as one Python serverless function (`api/index.py`, configured by
+`vercel.json`). It needs no third-party packages.
+
+- **Search index:** on a cold start the function builds the index into `/tmp` from the
+  bundled CSVs. The 209 MB index does not fit Vercel's 250 MB function limit alongside the
+  code. The build takes roughly 6–15 s, once per instance.
+- **Storage:** AI answers and saved analyses go to **Redis**, via `store.py` and Upstash's REST
+  API, because serverless functions have no persistent disk. Without Redis they last only as
+  long as one instance.
+- **Production guards:** hosts outside `ALLOWED_HOSTS` and Vercel's own URLs are rejected. An
+  optional `SITE_PASSWORD` turns on HTTP Basic auth. AI-using requests are limited per
+  visitor per hour (`AI_RATE_LIMIT`, default 30). Clearing saved AI answers is disabled on a
+  public deployment.
+
+Steps:
+
+1. **Vercel:** on vercel.com, choose *Add New → Project* and import this GitHub repository.
+   Framework preset: *Other*; leave the build command empty.
+2. **Redis:** in the project, open *Storage → Marketplace → Upstash for Redis → Create* and
+   connect it to the project. This sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
+3. **Environment variables:** set `GROQ_API_KEY` (your key), `LCA_AI_PROVIDER=groq`,
+   `ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com` and, optionally, `SITE_PASSWORD`.
+   Then redeploy.
+4. **Domain:** in Vercel, open *Settings → Domains* and add `yourdomain.com` and
+   `www.yourdomain.com`. In GoDaddy, open *DNS* for the domain and add the records Vercel
+   shows: usually an **A** record for `@` pointing to `76.76.21.21` and a **CNAME** record for
+   `www` pointing to `cname.vercel-dns.com`. Remove any conflicting GoDaddy
+   "parked"/forwarding records. Vercel issues HTTPS automatically once DNS resolves.
+
 ## Layout
 
 | File | Role |
