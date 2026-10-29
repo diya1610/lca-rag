@@ -4,9 +4,7 @@ Implementation of *"Hierarchical Retrieval Augmented Generation for Evidence-Gro
 Cycle Assessment"* (Srivastav, Patel, Bhathena — MPSTME, NMIMS). An auditable capstone
 prototype. **It is not a certified LCA calculator.**
 
-The system ingests the four public CSV exports from
-[`saniyalakdawala/lca_backend`](https://github.com/saniyalakdawala/lca_backend) at commit
-`975ca407202304e57d1d4c5a94b821c2338bf21a` (157,952 records) into a
+
 source → category → record hierarchy (410 nodes). It then:
 
 - retrieves candidates with SQLite FTS5 BM25 and reciprocal rank fusion;
