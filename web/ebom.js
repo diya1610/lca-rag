@@ -159,9 +159,39 @@ function savedNote(r) {
     h("button", { type: "button", class: "chip", onclick: () => analyseEbom({ refresh: true }) }, "Run fresh"));
 }
 
+const SECTIONS = [["sec-overview", "Overview"], ["sec-charts", "Charts"], ["sec-pareto", "Pareto"],
+  ["sec-recs", "Recommendations"], ["whatif", "What-if"], ["sec-items", "Items"], ["sec-materials", "Materials"]];
+let spy = null;
+
+function sectionNav() {
+  return h("nav", { class: "section-nav", "aria-label": "Results sections" }, SECTIONS.map(([id, label]) =>
+    h("a", { href: `#${id}`, "data-sec": id, onclick: (ev) => {
+      ev.preventDefault();
+      const el = document.getElementById(id);
+      if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 128, behavior: reduceMotion ? "auto" : "smooth" });
+    } }, label)));
+}
+
+function startScrollSpy() {
+  if (spy) spy.disconnect();
+  if (!("IntersectionObserver" in window)) return;
+  const links = new Map([...document.querySelectorAll(".section-nav a")].map((a) => [a.dataset.sec, a]));
+  spy = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      links.forEach((a) => a.classList.remove("active"));
+      links.get(en.target.id)?.classList.add("active");
+    }
+  }, { rootMargin: "-35% 0px -55% 0px" });
+  for (const [id] of SECTIONS) { const el = document.getElementById(id); if (el) spy.observe(el); }
+  for (const [id, a] of links) if (!document.getElementById(id)) a.hidden = true;
+}
+
 function renderEbom() {
   const r = eb.result;
-  const out = [savedNote(r), kpis(r)];
+  const k = kpis(r);
+  k.id = "sec-overview";
+  const out = [sectionNav(), savedNote(r), k];
   if (r.product.flagged_lines) {
     out.push(h("div", { class: "banner insufficient" }, h("div", {},
       h("h3", {}, `${r.product.flagged_lines} source factor${r.product.flagged_lines === 1 ? "" : "s"} looked implausible`),
@@ -208,15 +238,17 @@ function renderEbom() {
       h("p", { style: "margin:4px 0 0" }, `${r.corrections.map((c) => c.name).join("; ")} divided by 1000; grid electricity used per kWh. `
         + (used.length ? `Used on: ${used.map((l) => l.item_id).join(", ")}.` : "No line in this eBOM uses them.")))));
   }
-  out.push(h("div", { class: "dash-grid" }, radarCard(r), componentChart(r)));
-  out.push(paretoChart(r));
-  if (r.recommendations.length || r.product.hotspots.length) out.push(recommendationsPanel(r));
+  out.push(h("div", { class: "dash-grid", id: "sec-charts" }, radarCard(r), componentChart(r)));
+  out.push(Object.assign(paretoChart(r), { id: "sec-pareto" }));
+  if (r.recommendations.length || r.product.hotspots.length) out.push(Object.assign(recommendationsPanel(r), { id: "sec-recs" }));
   out.push(whatIfPanel(r));
-  out.push(itemsTable(r));
-  out.push(materialsTable(r));
+  out.push(Object.assign(itemsTable(r), { id: "sec-items" }));
+  out.push(Object.assign(materialsTable(r), { id: "sec-materials" }));
   out.push(methodology(r));
   $("#ebom-results").replaceChildren(...out);
   drawRows();
+  startScrollSpy();
+  glideTo($("#ebom-results"));
 }
 
 function kpis(r) {
@@ -337,7 +369,7 @@ function paretoChart(r) {
   let cum = 0;
   comps.forEach((c, i) => {
     cum += c.share || 0;
-    card.append(h("div", { class: "barrow pareto" },
+    card.append(h("div", { class: "barrow pareto" + (c.hotspot ? " is-hot" : "") },
       h("div", { class: "lbl", title: `${c.name} · ${c.materials.join(", ")}` }, `${i + 1}. ${c.name}`, h("span", { class: "hint" }, ` · ${c.materials.join(", ")}`)),
       segmentBar(c.segments, max),
       h("div", { class: "val" }, pct(c.share, 1), c.hotspot ? h("span", { class: "hot" }, " ●") : null),

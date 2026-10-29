@@ -81,7 +81,8 @@ body {
     var(--mint-bg);
   -webkit-font-smoothing: antialiased;
 }
-main { width: 100%; max-width: 1180px; margin: -56px auto 0; padding: 0 24px 56px; flex: 1; position: relative; z-index: 2; }
+main { width: 100%; max-width: 1180px; margin: -56px auto 0; padding: 0 24px 56px; flex: 1; position: relative; z-index: 2;
+  overflow-x: clip; }  /* slide-in offsets must not create sideways scroll; clip keeps sticky elements working */
 h1, h2, h3, h4 { margin: 0; color: var(--choc); font-family: var(--serif); font-weight: 600; line-height: 1.2; letter-spacing: -.01em; }
 /* Playfair defaults to old-style figures ("0" reads as "o"); use lining figures everywhere */
 body, h1, h2, h3, h4, .bignum, .tile .v, .grade, .sc-result .v, .rank { font-variant-numeric: lining-nums; }
@@ -470,6 +471,51 @@ td.notes ul { margin: 6px 0 0; padding-left: 16px; }
 .hero-text { transform: translateY(calc(var(--hero-shift, 0) * -.18px)); opacity: calc(1 - var(--hero-shift, 0) / 520); will-change: transform; }
 .hero-tree { transform: translateY(calc(var(--hero-shift, 0) * -.08px)); }
 
+/* drifting leaves in the hero */
+.leaf-fall { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.leaf-fall i { position: absolute; top: -24px; width: 12px; height: 18px; border-radius: 0 100% 0 100%;
+  background: rgba(234, 246, 238, .22); border: 1px solid rgba(234, 246, 238, .28); animation: leaffall linear infinite; }
+.leaf-fall i:nth-child(1) { left: 62%; animation-duration: 19s; animation-delay: -2s; }
+.leaf-fall i:nth-child(2) { left: 74%; animation-duration: 24s; animation-delay: -11s; background: rgba(201, 162, 75, .28); border-color: rgba(201, 162, 75, .4); }
+.leaf-fall i:nth-child(3) { left: 86%; animation-duration: 21s; animation-delay: -6s; width: 9px; height: 14px; }
+.leaf-fall i:nth-child(4) { left: 55%; animation-duration: 27s; animation-delay: -17s; }
+.leaf-fall i:nth-child(5) { left: 92%; animation-duration: 23s; animation-delay: -20s; background: rgba(201, 162, 75, .24); border-color: rgba(201, 162, 75, .36); width: 10px; height: 15px; }
+.leaf-fall i:nth-child(6) { left: 68%; animation-duration: 29s; animation-delay: -25s; width: 8px; height: 12px; }
+@keyframes leaffall {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  50% { transform: translate(-40px, 260px) rotate(140deg); }
+  90% { opacity: 1; }
+  100% { transform: translate(20px, 560px) rotate(300deg); opacity: 0; }
+}
+
+/* sticky section navigation for eBOM results */
+.section-nav { position: sticky; top: 72px; z-index: 15; display: flex; gap: 4px; flex-wrap: wrap; align-self: center;
+  padding: 6px; border-radius: 999px; background: rgba(255, 255, 255, .86); border: 1px solid var(--hairline);
+  box-shadow: var(--shadow); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); animation: rise .35s var(--ease) both; }
+.section-nav a { position: relative; padding: 7px 14px; border-radius: 999px; color: var(--sage-ink); font: 500 13px var(--sans);
+  text-decoration: none; transition: background .24s var(--ease), color .24s var(--ease); }
+.section-nav a:hover { color: var(--choc); background: var(--cream); }
+.section-nav a.active { color: var(--cream); background: var(--forest-700); }
+[id^="sec-"], #whatif { scroll-margin-top: 130px; }
+
+/* back to top, with a gold ring that fills as you scroll */
+.to-top { position: fixed; right: 24px; bottom: 24px; z-index: 25; width: 48px; height: 48px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; color: var(--cream);
+  background: radial-gradient(circle, var(--forest-700) 62%, transparent 63%),
+    conic-gradient(var(--gold) calc(var(--scroll-progress, 0) * 360deg), rgba(201, 162, 75, .2) 0);
+  box-shadow: 0 10px 24px rgba(22, 58, 40, .25); opacity: 0; transform: translateY(16px) scale(.9); pointer-events: none;
+  transition: opacity .3s var(--ease), transform .3s var(--ease); }
+.to-top.show { opacity: 1; transform: none; pointer-events: auto; }
+.to-top:hover { transform: translateY(-2px); }
+
+/* hotspot rows: one soft rose sweep when they come into view */
+.barrow.is-hot { position: relative; }
+.barrow.is-hot::before { content: ""; position: absolute; inset: 0 -10px; border-radius: 10px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(217, 74, 92, .12), transparent); background-size: 200% 100%;
+  animation: sweep 1.6s var(--ease) both .4s; }
+@keyframes sweep { from { background-position: 150% 0; opacity: 1; } to { background-position: -50% 0; opacity: .5; } }
+
 /* hero: staggered entrance and slow ambient light */
 .hero { position: relative; overflow: hidden; }
 .hero::before, .hero::after { content: ""; position: absolute; border-radius: 50%; filter: blur(50px); pointer-events: none;
@@ -560,6 +606,7 @@ details[open] > :not(summary) { animation: rowin .24s var(--ease) both; }
 .reveal:not(.in), .reveal:not(.in) * { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+  .leaf-fall { display: none; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .reveal { opacity: 1; transform: none; }
 }
@@ -574,6 +621,9 @@ details[open] > :not(summary) { animation: rowin .24s var(--ease) both; }
   .hero-tree { display: none; }
 }
 @media (max-width: 760px) {
+  .section-nav { top: 104px; border-radius: 14px; }
+  .section-nav a { padding: 6px 10px; font-size: 12.5px; }
+  .to-top { right: 16px; bottom: 16px; }
   .topbar-inner { height: auto; flex-wrap: wrap; padding-top: 10px; gap: 4px; }
   .tabs { width: 100%; overflow-x: auto; height: 46px; }
   .tab { padding: 0 12px; }

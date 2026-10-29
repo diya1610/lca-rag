@@ -101,10 +101,24 @@ if (!reduceMotion) {
     doc.style.setProperty("--scroll-progress", (y / max).toFixed(4));
     doc.style.setProperty("--hero-shift", Math.min(y, 600).toFixed(1));
     document.querySelector(".topbar")?.classList.toggle("scrolled", y > 24);
+    document.getElementById("to-top")?.classList.toggle("show", y > 600);
   };
   window.addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
   window.addEventListener("resize", onScroll);
   onScroll();
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target.closest("#to-top")) window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+});
+
+// Glide to new results when they land below the fold.
+function glideTo(el, offset = 140) {
+  if (!el) return;
+  const top = el.getBoundingClientRect().top + window.scrollY - offset;
+  if (el.getBoundingClientRect().top > window.innerHeight * .6 || el.getBoundingClientRect().top < 0) {
+    window.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
+  }
 }
 
 new MutationObserver((muts) => {
@@ -291,6 +305,7 @@ function renderResult(r) {
     out.push(h("p", { class: "note" }, r.selection_note));
   }
   $("#results").replaceChildren(...out);
+  glideTo($("#results"));
 }
 
 function answerCard(a) {
