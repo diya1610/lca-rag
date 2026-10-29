@@ -471,6 +471,36 @@ td.notes ul { margin: 6px 0 0; padding-left: 16px; }
 .saved-note .chip { background: var(--white); border-color: transparent; padding: 4px 12px; font-size: 12.5px; }
 .saved-icon { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--white); font-size: 12px; }
 
+/* ---------- yellow boxes with brown writing ---------- */
+.card, .tile, .table-wrap, .sc-result, .sister, .swap, .drawer, table.impacts, pre.raw, .section-nav {
+  --box: #FDF3D3;
+  --box-2: #F8E9BC;
+  --box-line: #EAD9A6;
+  --sage-ink: #6B4E30;      /* secondary writing: warm brown, 6.6:1 on the yellow */
+  --sage: #8A6A47;
+  --earth-track: #F1E2B5;
+  color: var(--choc);
+}
+.card, .tile, .table-wrap, .sc-result, .sister, .swap, .drawer, table.impacts, pre.raw { background: var(--box); border-color: var(--box-line); }
+.provisional { background: #FBEFD0; }
+.banner, .banner.insufficient { background: #FDF3D3; border-color: #EAD9A6; --sage-ink: #6B4E30; }
+.banner.ok { background: #FDF3D3; border-color: #EAD9A6; border-left-color: var(--forest-700); }
+.banner.error { background: #FCE7DF; border-color: #EAD9A6; border-left-color: var(--rose); }
+.kpis > .tile.warn { background: linear-gradient(180deg, #FCE7DF, var(--box) 60%); }
+.drawer-head, table.lines th { background: var(--box-2); }
+.drawer-head { border-bottom-color: var(--box-line); }
+table.lines th, table.lines td, table.impacts td { border-color: var(--box-line); }
+table.lines td { border-bottom-color: #F1E3B8; }
+table.lines tbody tr:hover { background: #FBEBC0; }
+.card .rank, .card .tag, .card .route span.node { background: var(--box-2); border-color: var(--box-line); }
+.card :is(input, select), .drawer :is(input, select), .swap :is(input, select) { background: #FFFBEE; border-color: var(--box-line); }
+.barrow + .barrow { border-top-color: #F1E3B8; }
+.section-nav { background: rgba(253, 243, 211, .92); border-color: var(--box-line); }
+.section-nav a:hover { background: var(--box-2); }
+.sc-result.base { background: var(--box-2); }
+/* pastel badges keep their shape on yellow */
+.card .grade, .tile .grade, .sc-result .grade, .card .status, .card .conf { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--g-ink, currentColor) 30%, transparent); }
+
 /* ---------- motion: subtle, organic ---------- */
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
 @keyframes rowin { from { opacity: 0; transform: translateY(6px); } }
