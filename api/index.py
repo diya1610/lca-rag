@@ -23,4 +23,7 @@ if not INDEX.exists():
 import server  # noqa: E402
 
 engine = rag.Engine(INDEX)
-handler = server.make_handler(engine)  # Vercel's Python runtime serves this BaseHTTPRequestHandler
+
+
+class handler(server.make_handler(engine)):  # noqa: N801 (Vercel looks for a top-level "handler")
+    """The app's request handler, as the class Vercel's Python runtime serves."""

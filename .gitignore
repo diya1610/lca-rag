@@ -8,3 +8,5 @@ upstream/
 index/ai_cache.json
 index/*.tmp
 index/results/
+.vercel
+.env*
