@@ -121,6 +121,23 @@ class DeployTests(unittest.TestCase):
             ebom.analyse(self.engine, SAMPLE, use_ai=True, provider="stub")
             self.assertEqual(len(stub.calls), 2 * n)  # cleared: asked again
 
+    def test_vercel_rewritten_paths(self):
+        httpd = server.make_server(self.engine, port=0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+        try:
+            with urllib.request.urlopen(base + "/api/index?__path=/health", timeout=10) as r:
+                self.assertEqual(json.loads(r.read())["records"], 157_952)
+            with urllib.request.urlopen(base + "/api/index?__path=/record&id=bottles_processes:232", timeout=10) as r:
+                self.assertEqual(json.loads(r.read())["id"], "bottles_processes:232")
+            req = urllib.request.Request(base + "/api/index?__path=/query", data=b'{"query": "steel rebar"}',
+                                         method="POST", headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                self.assertTrue(json.loads(r.read())["candidates"])
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
     def test_rate_limit_and_guards(self):
         httpd = server.make_server(self.engine, port=0, fallback=lambda **kw: {"status": "unavailable"})
         threading.Thread(target=httpd.serve_forever, daemon=True).start()

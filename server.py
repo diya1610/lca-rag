@@ -115,8 +115,12 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
             return False
 
         def _path(self) -> str:
-            # serverless rewrites may deliver /api/index/... ; the app's routes start at /
-            path = urlparse(self.path).path
+            # On Vercel every request is rewritten to /api/index?__path=/<original path>
+            url = urlparse(self.path)
+            original = parse_qs(url.query).get("__path")
+            if original:
+                return original[0] or "/"
+            path = url.path
             if path.startswith("/api/index"):
                 path = path[len("/api/index"):] or "/"
             return path
@@ -182,7 +186,7 @@ def make_handler(engine: rag.Engine, fallback=None, explainer=None, ideas_genera
                 return
             url = urlparse(self.path)
             path = self._path()
-            qs = {k: v[0] for k, v in parse_qs(url.query).items()}
+            qs = {k: v[0] for k, v in parse_qs(url.query).items() if k != "__path"}
             font = FONT_RE.fullmatch(path)
             if font and (WEB_DIR / "fonts" / font.group(1)).is_file():
                 data = (WEB_DIR / "fonts" / font.group(1)).read_bytes()
