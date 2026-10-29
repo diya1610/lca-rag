@@ -349,9 +349,7 @@ function hotspotIdeas(r) {
           lower_impact_alternatives: sisters, provider: $("#e-provider").value });
         if (res.status !== "ok") throw new Error(`${res.status}: ${res.error || ""}`);
         out.replaceChildren(h("div", { class: "explain ai" },
-          h("div", { class: "label" }, `AI-written · ${res.provider} ${res.model || ""}`),
-          h("ul", { class: "advice" }, res.ideas.map((i) => h("li", {}, h("b", {}, `${i.type}: `), i.idea, h("div", { class: "sub" }, i.rationale)))),
-          h("div", { class: "hint" }, res.label)));
+          h("ul", { class: "advice" }, res.ideas.map((i) => h("li", {}, h("b", {}, `${i.type}: `), i.idea, h("div", { class: "sub" }, i.rationale))))));
       } catch (err) {
         out.replaceChildren(h("span", { class: "calc-out err" }, err.message));
       } finally {
@@ -474,8 +472,8 @@ function renderWhatIf(w) {
       `${c.component}: ${c.from} → ${c.to} `, h("span", { class: "hint" },
         c.to_impact == null ? "(no reliable data; excluded)" : `(${TIER_LABEL[c.to_tier]}${c.to_record ? ": " + shortName(c.to_record) : ""})`)))) : null,
     sc ? h("div", { class: "explain" + (sc.explanation.source === "ai" ? " ai" : "") },
-      h("div", { class: "label" }, sc.explanation.source === "ai" ? `AI-written · ${sc.explanation.provider || ""} ${sc.explanation.model || ""}` : "Summary"),
-      h("p", {}, sc.explanation.text), h("div", { class: "hint" }, sc.explanation.label)) : null);
+      h("div", { class: "label" }, "Design note"),
+      h("p", {}, sc.explanation.text)) : null);
   $("#whatif-results").replaceChildren(h("div", { class: "sc-grid" }, col("Baseline", b), w.scenarios.map((sc) => col(sc.name, sc.summary, sc))));
 }
 
@@ -542,7 +540,7 @@ function lineNotes(l) {
   }
   const p = l.provisional;
   if (p) {
-    if (p.contribution != null) notes.push(`AI (${p.provider}${p.model ? " · " + p.model : ""}): ≈${fmt(p.value)} ${p.impact_unit} per ${l.unit}, range ${fmt(p.lower)}–${fmt(p.upper)}. ${p.explanation || ""}`);
+    if (p.contribution != null) notes.push(`AI estimate: ≈${fmt(p.value)} ${p.impact_unit} per ${l.unit}, range ${fmt(p.lower)}–${fmt(p.upper)}. ${p.explanation || ""}`);
     else if (p.status === "declined") notes.push(`AI declined: ${p.explanation || ""}`);
     else notes.push(`AI ${p.status}: ${p.error || ""}`);
   }

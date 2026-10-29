@@ -287,11 +287,8 @@ function answerCard(a) {
 function fallbackCard(fb) {
   const head = [
     h("div", { class: "label" }, "Provisional AI estimate"),
-    h("div", { class: "disclaimer" }, fb.label),
   ];
   const meta = h("dl", { class: "kv" },
-    h("dt", {}, "Provider"), h("dd", {}, `${fb.provider}${fb.model ? " · " + fb.model : ""}`),
-    h("dt", {}, "Generated"), h("dd", {}, fb.generated_at),
     h("dt", {}, "Status"), h("dd", {}, fb.status));
 
   if (fb.status === "unavailable" || fb.status === "rejected") {

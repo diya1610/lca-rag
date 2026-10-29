@@ -234,7 +234,7 @@ class EbomTests(unittest.TestCase):
                            explainer=lambda facts, provider=None: {"status": "ok", "text": "AI note", "provider": "stub"})
         exp = res["scenarios"][0]["explanation"]
         self.assertEqual((exp["source"], exp["text"]), ("ai", "AI note"))
-        self.assertIn("AI-written", exp["label"])
+        self.assertNotIn("label", exp)  # no provider/model or disclaimer labels are shown
 
     # -- multi-material eBOMs (iPhone 16e format) -------------------------------------
 

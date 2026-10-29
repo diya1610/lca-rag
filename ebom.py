@@ -715,7 +715,6 @@ def eco_ideas(facts: dict, provider: str | None = None, generator=None) -> dict:
         return cached
     answer = generator(facts, provider=provider)
     if answer.get("status") == "ok":
-        answer["label"] = "AI-written suggestions; check feasibility with engineering and LCA data."
         with _AI_LOCK:
             _ai_cache()[key] = answer
             _save_ai_cache()
@@ -1170,7 +1169,7 @@ def _explain(sc: dict, base: dict, indicator: str, use_ai: bool, provider, expla
         result = explainer(facts, provider=provider)
         if result.get("status") == "ok":
             return {"source": "ai", "text": result["text"], "provider": result.get("provider"),
-                    "model": result.get("model"), "label": "AI-written explanation; check against the numbers."}
+                    "model": result.get("model")}
     parts = []
     for c in sc["changes"]:
         if c["to_impact"] is None:
@@ -1184,7 +1183,7 @@ def _explain(sc: dict, base: dict, indicator: str, use_ai: bool, provider, expla
         parts.append(f"Product total changes by {sc['delta']:+.4g} kg CO2-eq"
                      + (f" ({sc['delta_pct'] * 100:+.1f}%)" if sc["delta_pct"] is not None else "")
                      + f"; grade {sc['grade_change'][0]} -> {sc['grade_change'][1]}.")
-    return {"source": "rules", "text": " ".join(parts), "label": "Generated from the numbers above."}
+    return {"source": "rules", "text": " ".join(parts)}
 
 
 def main() -> int:
