@@ -90,6 +90,23 @@ function loadingSteps(container, steps, every = 1400) {
   }, every);
 }
 
+// scroll-linked: progress line, firmer top bar, hero drifting up as you scroll past it
+if (!reduceMotion) {
+  let ticking = false;
+  const onScroll = () => {
+    ticking = false;
+    const doc = document.documentElement;
+    const y = window.scrollY;
+    const max = Math.max(1, doc.scrollHeight - window.innerHeight);
+    doc.style.setProperty("--scroll-progress", (y / max).toFixed(4));
+    doc.style.setProperty("--hero-shift", Math.min(y, 600).toFixed(1));
+    document.querySelector(".topbar")?.classList.toggle("scrolled", y > 24);
+  };
+  window.addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+  window.addEventListener("resize", onScroll);
+  onScroll();
+}
+
 new MutationObserver((muts) => {
   for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) revealWithin(n.parentElement || n);
 }).observe(document.body, { childList: true, subtree: true });
