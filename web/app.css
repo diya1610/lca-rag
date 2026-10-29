@@ -81,7 +81,7 @@ body {
     var(--mint-bg);
   -webkit-font-smoothing: antialiased;
 }
-main { width: 100%; max-width: 1180px; margin: -56px auto 0; padding: 0 24px 56px; flex: 1; position: relative; z-index: 2;
+main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 44px 24px 64px; flex: 1; position: relative; z-index: 2;
   overflow-x: clip; }  /* slide-in offsets must not create sideways scroll; clip keeps sticky elements working */
 h1, h2, h3, h4 { margin: 0; color: var(--choc); font-family: var(--serif); font-weight: 600; line-height: 1.2; letter-spacing: -.01em; }
 /* Playfair defaults to old-style figures ("0" reads as "o"); use lining figures everywhere */
@@ -127,7 +127,7 @@ button, input, select { font: inherit; color: inherit; }
     linear-gradient(160deg, var(--forest-700), var(--forest-900));
   color: var(--cream);
 }
-.hero-inner { max-width: 1180px; margin: 0 auto; padding: 56px 24px 104px; }
+.hero-inner { max-width: 1180px; margin: 0 auto; padding: 56px 24px 72px; }
 .eyebrow { margin: 0 0 14px; font: 600 11.5px/1 var(--sans); color: var(--gold); text-transform: uppercase; letter-spacing: .18em; }
 .hero h1 { color: var(--cream); font-size: clamp(34px, 5vw, 56px); font-weight: 600; line-height: 1.08; letter-spacing: -.02em; max-width: 14ch; }
 .hero h1 em { font-style: italic; font-weight: 500; color: #EBDDB3; }
@@ -144,7 +144,7 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---------- cards & form ---------- */
 .card { background: var(--white); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
-.search-card { margin-bottom: 24px; padding: 28px; }
+.search-card { margin-bottom: 32px; }
 .card-title { position: relative; padding-left: 14px; font-size: 21px; margin-bottom: 10px; }
 .card-title::before { content: ""; position: absolute; left: 0; top: .2em; bottom: .2em; width: 3px; border-radius: 3px; background: var(--forest-700); }
 .query-row { display: flex; gap: 12px; }
@@ -187,6 +187,25 @@ label.corr { align-items: flex-start; }
 label.check input, label.corr input { accent-color: var(--forest-700); width: 17px; height: 17px; margin-top: 1px; }
 label.inline { flex-direction: row; align-items: center; gap: 8px; }
 label.inline input { width: 72px; padding: 8px 10px; }
+
+/* ---------- open panels: controls sit directly on the mint page, no box ---------- */
+.panel-head { margin: 0 0 18px; }
+.panel-kicker { margin: 0 0 6px; font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .18em; color: var(--gold-ink); }
+.panel-head h2 { font-size: clamp(26px, 3vw, 34px); font-weight: 600; letter-spacing: -.015em; }
+.open-panel { background: none; border: 0; box-shadow: none; padding: 0; margin-bottom: 32px; }
+.open-panel .query-row input { background: var(--white); border-color: transparent; box-shadow: 0 2px 4px rgba(31, 77, 54, .04), 0 14px 34px rgba(31, 77, 54, .10); padding: 17px 24px; font-size: 17.5px; }
+.open-panel .query-row input:focus { border-color: var(--gold); box-shadow: 0 0 0 4px rgba(201, 162, 75, .18), 0 14px 34px rgba(31, 77, 54, .12); }
+.open-panel .chip { background: rgba(255, 255, 255, .7); border-color: rgba(31, 77, 54, .12); }
+.open-panel .chip:hover { background: var(--white); }
+.open-panel label select, .open-panel label input { background: var(--white); border-color: rgba(31, 77, 54, .12); }
+.open-panel .options { border-top: 1px solid rgba(31, 77, 54, .12); }
+.open-panel .options select { background: var(--white); border-color: rgba(31, 77, 54, .12); }
+.open-panel .drop { background: rgba(255, 255, 255, .55); border-color: rgba(31, 77, 54, .25); }
+.open-panel .drop:hover, .open-panel .drop.over { background: var(--white); }
+.open-panel .tree { margin-top: 4px; }
+.open-panel > .muted:first-child { margin-top: 0; }
+.tabpanel > .panel-head { animation: rise .42s var(--ease) both .24s; }
+.tabpanel > .open-panel { animation: rise .42s var(--ease) both .32s; }
 
 /* ---------- results ---------- */
 .results { display: flex; flex-direction: column; gap: 20px; }

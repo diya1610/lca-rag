@@ -78,7 +78,8 @@
 
   <main>
     <section id="tab-search" class="tabpanel">
-      <form id="search-form" class="card search-card" autocomplete="off">
+      <div class="panel-head"><p class="panel-kicker">Search</p><h2>Find a material, process or flow</h2></div>
+      <form id="search-form" class="search-card open-panel" autocomplete="off">
         <div class="query-row">
           <input id="q" type="search" placeholder="Material, process or flow, e.g. bottle-grade PET" aria-label="Query" required>
           <button type="submit" class="primary" id="go">Search</button>
@@ -110,7 +111,8 @@
     </section>
 
     <section id="tab-ebom" class="tabpanel" hidden>
-      <div class="card">
+      <div class="panel-head"><p class="panel-kicker">eBOM analysis</p><h2>Upload a bill of materials</h2></div>
+      <div class="open-panel">
         <div id="drop" class="drop" tabindex="0" role="button" aria-label="Upload eBOM CSV">
           <input type="file" id="ebom-file" accept=".csv,.tsv,.txt,text/csv" hidden>
           <div class="drop-title">Drop an eBOM CSV here or <u>choose a file</u></div>
@@ -137,7 +139,7 @@
             <option value="ranked">Split by listed order (first = main), labelled</option>
             <option value="equal">Split equally, labelled</option>
             <option value="ai">AI-estimated composition (needs AI fallback)</option></select></label>
-          <label>Electricity grid <span class="hint">for kWh lines</span><select id="e-grid"></select></label>
+          <label><span>Electricity grid <span class="hint">for kWh lines</span></span><select id="e-grid"></select></label>
           <label class="check corr"><input type="checkbox" id="e-corr"> <span>Apply reviewed unit corrections
             <span class="hint">cement and zinc ÷1000, grid electricity per kWh; labelled</span></span></label>
         </div>
@@ -152,7 +154,8 @@
     </section>
 
     <section id="tab-browse" class="tabpanel" hidden>
-      <div class="card">
+      <div class="panel-head"><p class="panel-kicker">Browse</p><h2>Explore the categories</h2></div>
+      <div class="open-panel">
         <p class="muted">Source → category tree read directly from the CSV category paths. Click a branch to expand it, or a label to search within that source.</p>
         <ul class="tree" id="tree"></ul>
       </div>
