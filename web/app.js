@@ -15,7 +15,8 @@ function h(tag, attrs, ...kids) {
   }
   for (const kid of kids.flat(Infinity)) {
     if (kid == null || kid === false) continue;
-    el.append(kid instanceof Node ? kid : String(kid));
+    // no em dashes in the UI, including AI-written text
+    el.append(kid instanceof Node ? kid : String(kid).replace(/\s*\u2014\s*/g, ", "));
   }
   return el;
 }
@@ -372,9 +373,9 @@ async function openRecord(id, indicator) {
   parts.push(h("div", {},
     h("dl", { class: "kv" },
       h("dt", {}, "Category"), h("dd", {}, prettyPath(rec.hierarchy_path)),
-      h("dt", {}, "Location"), h("dd", {}, rec.location || "—"),
-      h("dt", {}, "Reference unit"), h("dd", {}, rec.reference_unit || "— (not stated in source)"),
-      h("dt", {}, "Stage"), h("dd", {}, rec.stage || "—")),
+      h("dt", {}, "Location"), h("dd", {}, rec.location || "n/a"),
+      h("dt", {}, "Reference unit"), h("dd", {}, rec.reference_unit || "Not stated in source"),
+      h("dt", {}, "Stage"), h("dd", {}, rec.stage || "n/a")),
     rec.warnings.length ? h("div", { class: "tags" },
       rec.warnings.map((w) => h("span", { class: "tag warn", title: w.message }, "⚠ " + (WARNINGS[w.code] || w.code)))) : null));
 
@@ -405,7 +406,7 @@ async function openRecord(id, indicator) {
       h("p", { class: "hint", style: "margin:6px 0 0" }, "The unit must match the record's reference unit exactly; no conversions are made.")));
 
     parts.push(h("div", {},
-      h("h4", {}, `Indicators (${labels.length}) — original labels`),
+      h("h4", {}, `Original indicator labels (${labels.length})`),
       h("table", { class: "impacts" }, h("tbody", {},
         labels.map((l) => h("tr", { class: rec.impacts[l] === 0 ? "zero" : "" }, h("td", {}, l), h("td", {}, fmt(rec.impacts[l]))))))));
   } else {

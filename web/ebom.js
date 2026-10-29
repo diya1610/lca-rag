@@ -27,10 +27,10 @@ const eb = { text: null, name: null, result: null, sort: { key: "rank", dir: 1 }
 function errorBanner(title, msg) {
   return h("div", { class: "banner error" }, h("div", {}, h("h3", {}, title), h("p", {}, msg)));
 }
-const pct = (x, d = 0) => (x == null ? "—" : `${(x * 100).toFixed(d)}%`);
+const pct = (x, d = 0) => (x == null ? "n/a" : `${(x * 100).toFixed(d)}%`);
 const gradeBadge = (g, big) => g
   ? h("span", { class: `grade g-${g}${big ? " big" : ""}`, title: `Grade ${g}` }, g)
-  : h("span", { class: "muted" }, "—");
+  : h("span", { class: "muted" }, "n/a");
 
 // ---------------------------------------------------------------- setup
 
@@ -207,27 +207,21 @@ function renderEbom() {
 
 function kpis(r) {
   const p = r.product;
-  const tierBar = h("div", { class: "tierbar", role: "img",
-    "aria-label": Object.entries(p.tier_shares).map(([k, v]) => `${TIER_LABEL[k]} ${pct(v)}`).join(", ") },
-    Object.entries(p.tier_shares).filter(([, v]) => v > 0).map(([k, v]) =>
-      h("i", { class: `seg t-${k}`, style: `width:${v * 100}%`, title: `${TIER_LABEL[k]}: ${pct(v, 1)}` })));
   const conf = p.match_confidence;
   const scored = conf.high + conf.medium + conf.low;
   return h("div", { class: "kpis" },
     h("div", { class: "tile" },
       h("div", { class: "k" }, "Total GHG"),
-      h("div", { class: "v", "data-count": p.total ?? "" }, p.total == null ? "—" : fmt(p.total), h("small", {}, " kg CO₂-eq")),
-      tierBar,
-      h("div", { class: "s" }, Object.entries(p.tier_shares).map(([k, v]) => `${TIER_LABEL[k]} ${pct(v)}`).join(" · ")),
+      h("div", { class: "v", "data-count": p.total ?? "" }, p.total == null ? "n/a" : fmt(p.total), h("small", {}, " kg CO₂-eq")),
       p.intensity != null ? h("div", { class: "s" }, `${fmt(p.intensity)} kg CO₂-eq per kg of product`) : null),
     h("div", { class: "tile" },
       h("div", { class: "k" }, "Overall score & grade"),
       h("div", { class: "grade-row" }, gradeBadge(p.grade, true),
-        h("div", {}, h("div", { class: "v", "data-count": p.score == null ? "" : Number(p.score.toFixed(1)) }, p.score == null ? "—" : p.score.toFixed(1), h("small", {}, " / 100")),
+        h("div", {}, h("div", { class: "v", "data-count": p.score == null ? "" : Number(p.score.toFixed(1)) }, p.score == null ? "n/a" : p.score.toFixed(1), h("small", {}, " / 100")),
           h("div", { class: "s" }, p.grade_text || ""))),
       h("div", { class: "s" }, `Graded on ${p.grade_basis === "ghg" ? "GHG only" : "the combined score"} · `
-        + `combined ${p.combined_grade || "—"} (${p.combined_score == null ? "—" : p.combined_score.toFixed(1)}) · `
-        + `GHG-only ${p.ghg_grade || "—"} (${p.ghg_score == null ? "—" : p.ghg_score.toFixed(1)})`),
+        + `combined ${p.combined_grade || "n/a"} (${p.combined_score == null ? "n/a" : p.combined_score.toFixed(1)}) · `
+        + `GHG-only ${p.ghg_grade || "n/a"} (${p.ghg_score == null ? "n/a" : p.ghg_score.toFixed(1)})`),
       h("div", { class: "s" }, `Data confidence: ${p.confidence} · ${pct(p.mass_coverage)} of mass covered`)),
     h("div", { class: "tile" + (p.hotspots.length ? " warn" : "") },
       h("div", { class: "k" }, "Hotspots"),
@@ -471,11 +465,11 @@ function renderWhatIf(w) {
   const col = (title, s, sc) => h("div", { class: "sc-result" + (sc ? "" : " base") },
     h("h4", {}, title),
     h("div", { class: "grade-row" }, gradeBadge(s.grade, true),
-      h("div", {}, h("div", { class: "v" }, s.total == null ? "—" : fmt(s.total), h("small", {}, " kg CO₂-eq")),
-        h("div", { class: "s" }, `score ${s.score == null ? "—" : s.score.toFixed(1)}`))),
+      h("div", {}, h("div", { class: "v" }, s.total == null ? "n/a" : fmt(s.total), h("small", {}, " kg CO₂-eq")),
+        h("div", { class: "s" }, `score ${s.score == null ? "n/a" : s.score.toFixed(1)}`))),
     sc ? h("div", { class: "delta " + (sc.delta < 0 ? "down" : sc.delta > 0 ? "up" : "") },
-      sc.delta == null ? "—" : `${sc.delta > 0 ? "+" : ""}${fmt(sc.delta)} kg CO₂-eq (${sc.delta_pct > 0 ? "+" : ""}${pct(sc.delta_pct, 1)})`,
-      h("div", { class: "s" }, `grade ${sc.grade_change[0] || "—"} → ${sc.grade_change[1] || "—"}`)) : h("div", { class: "s" }, "Current design"),
+      sc.delta == null ? "n/a" : `${sc.delta > 0 ? "+" : ""}${fmt(sc.delta)} kg CO₂-eq (${sc.delta_pct > 0 ? "+" : ""}${pct(sc.delta_pct, 1)})`,
+      h("div", { class: "s" }, `grade ${sc.grade_change[0] || "n/a"} → ${sc.grade_change[1] || "n/a"}`)) : h("div", { class: "s" }, "Current design"),
     sc ? h("ul", { class: "advice" }, sc.changes.map((c) => h("li", {},
       `${c.component}: ${c.from} → ${c.to} `, h("span", { class: "hint" },
         c.to_impact == null ? "(no reliable data; excluded)" : `(${TIER_LABEL[c.to_tier]}${c.to_record ? ": " + shortName(c.to_record) : ""})`)))) : null,
@@ -533,10 +527,10 @@ function lineNotes(l) {
   if (l.composition) {
     const c = l.composition;
     const how = { ranked: "split by listed order (assumption)", equal: "equal split (assumption)", ai: "AI-estimated composition (provisional)" }[c.mode];
-    notes.push(`Mass: ${pct(c.fraction, 1)} of the component's ${c.of} ${c.unit || ""} listed as "${c.cell}" — ${how}.`);
+    notes.push(`Mass: ${pct(c.fraction, 1)} of the component's ${c.of} ${c.unit || ""} listed as "${c.cell}": ${how}.`);
     for (const a of c.assumptions || []) notes.push(`Composition assumption: ${a}`);
   }
-  if (l.reference) notes.push(`Electricity grid: ${l.reference.name}, ${l.reference.g_co2_per_kwh} g CO₂-eq/kWh — external reference value, not from the database.`);
+  if (l.reference) notes.push(`Electricity grid: ${l.reference.name}, ${l.reference.g_co2_per_kwh} g CO₂-eq/kWh, an external reference value (not from the database).`);
   else if (l.grid) notes.push(`Electricity grid: ${l.grid} from the database (European grids only).`);
   if (l.converted_from) notes.push(`Converted ${l.converted_from.quantity} ${l.converted_from.unit} to ${fmt(l.quantity)} ${l.unit}.`);
   if (l.unit_source === "default") notes.push(`Unit ${l.unit} taken from your default, not the file.`);
@@ -572,22 +566,22 @@ function drawRows() {
   document.querySelectorAll("#items th.sortable").forEach((th) => {
     th.setAttribute("aria-sort", th.dataset.key === eb.sort.key ? (eb.sort.dir > 0 ? "ascending" : "descending") : "none");
   });
-  const num = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
+  const num = (v, d = 1) => (v == null ? "n/a" : v.toFixed(d));
   $("#items-body").replaceChildren(...rows.map((l) => {
     const rec = l.proxy || l.match;
     const recCell = !(l.tier && rec) ? null : l.reference ? h("span", {}, shortName(rec.name))
       : h("button", { type: "button", class: "linkish", title: rec.name, onclick: () => openRecord(rec.id, r.indicator) }, shortName(rec.name));
     const notes = lineNotes(l);
     return h("tr", { class: l.hotspot ? "hot-row" : "" },
-      h("td", { class: "num" }, l.rank ?? "—"),
+      h("td", { class: "num" }, l.rank ?? "n/a"),
       h("td", {}, l.item_id),
       h("td", {}, l.component, l.recyclability ? h("div", { class: "sub" }, `♻ ${l.recyclability}`) : null),
       h("td", {}, l.material || "(empty)", l.original_material ? h("div", { class: "sub" }, `was ${l.original_material}`) : null),
-      h("td", { class: "num" }, l.quantity != null ? `${fmt(l.quantity)} ${l.unit || "?"}` : (l.quantity_raw || "—")),
+      h("td", { class: "num" }, l.quantity != null ? `${fmt(l.quantity)} ${l.unit || "?"}` : (l.quantity_raw || "n/a")),
       h("td", {}, h("span", { class: "status " + l.status }, STATUS_LABEL[l.status]),
         l.correction || l.proxy?.corrected ? h("span", { class: "status corrected", title: "Reviewed ÷1000 unit correction applied" }, "corrected") : null,
         recCell ? h("div", { class: "sub" }, recCell) : null),
-      h("td", { class: "num" }, l.impact == null ? "—" : fmt(l.impact)),
+      h("td", { class: "num" }, l.impact == null ? "n/a" : fmt(l.impact)),
       h("td", { class: "num" }, pct(l.share, 1)),
       h("td", { class: "num" }, num(l.scores?.criticality, 0)),
       h("td", { class: "num" }, num(l.scores?.toxicity, 0)),
@@ -595,10 +589,10 @@ function drawRows() {
       h("td", { class: "num" }, num(l.scores?.composite)),
       h("td", {}, gradeBadge(l.grade)),
       h("td", {}, gradeBadge(l.ghg_grade)),
-      h("td", {}, l.confidence ? h("span", { class: `conf c-${l.confidence}` }, l.confidence) : "—"),
+      h("td", {}, l.confidence ? h("span", { class: `conf c-${l.confidence}` }, l.confidence) : "n/a"),
       h("td", {}, l.hotspot ? h("span", { class: "hot" }, "● yes") : ""),
       h("td", { class: "notes" }, notes.length ? h("details", {}, h("summary", {}, `${notes.length} note${notes.length > 1 ? "s" : ""}`),
-        h("ul", {}, notes.map((n) => h("li", {}, n)))) : h("span", { class: "muted" }, "—")));
+        h("ul", {}, notes.map((n) => h("li", {}, n)))) : h("span", { class: "muted" }, "n/a")));
   }));
   $("#items-count").textContent = `${rows.length} of ${r.lines.length} items shown. Click a column header to sort.`;
 }
@@ -610,13 +604,13 @@ function materialsTable(r) {
       h("thead", {}, h("tr", {}, ["Material", "Family", "Used in", "Mass", "GHG", "Share", "kg CO₂-eq/kg", "Score", "Grade", "Basis"].map((t) => h("th", {}, t)))),
       h("tbody", {}, r.materials.map((m) => h("tr", { class: m.hotspot ? "hot-row" : "" },
         h("td", {}, m.name),
-        h("td", {}, m.family || h("span", { class: "muted" }, "—")),
+        h("td", {}, m.family || h("span", { class: "muted" }, "n/a")),
         h("td", {}, m.components.join(", ")),
-        h("td", { class: "num" }, m.mass_kg == null ? "—" : `${fmt(m.mass_kg)} kg`),
-        h("td", { class: "num" }, m.impact == null ? "—" : fmt(m.impact)),
+        h("td", { class: "num" }, m.mass_kg == null ? "n/a" : `${fmt(m.mass_kg)} kg`),
+        h("td", { class: "num" }, m.impact == null ? "n/a" : fmt(m.impact)),
         h("td", { class: "num" }, pct(m.share, 1)),
-        h("td", { class: "num" }, m.intensity == null ? "—" : fmt(m.intensity)),
-        h("td", { class: "num" }, m.score == null ? "—" : m.score.toFixed(1)),
+        h("td", { class: "num" }, m.intensity == null ? "n/a" : fmt(m.intensity)),
+        h("td", { class: "num" }, m.score == null ? "n/a" : m.score.toFixed(1)),
         h("td", {}, gradeBadge(m.grade)),
         h("td", {}, Object.entries(m.tiers).filter(([, v]) => v > 0).map(([k]) => h("span", { class: "status " + k, style: "margin-right:4px" }, TIER_LABEL[k])),
           m.uncovered_lines ? h("span", { class: "status not_covered" }, `${m.uncovered_lines} not covered`) : null)))))));
